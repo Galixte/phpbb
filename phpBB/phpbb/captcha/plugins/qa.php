@@ -84,7 +84,7 @@ class qa
 		$db->sql_freeresult($result);
 
 		// fallback to the board default lang
-		if (!sizeof($this->question_ids))
+		if (!count($this->question_ids))
 		{
 			$this->question_lang = $config['default_lang'];
 
@@ -95,6 +95,28 @@ class qa
 
 			while ($row = $db->sql_fetchrow($result))
 			{
+				$this->question_ids[$row['question_id']] = $row['question_id'];
+			}
+			$db->sql_freeresult($result);
+		}
+
+		// final fallback to any language
+		if (!count($this->question_ids))
+		{
+			$this->question_lang = '';
+
+			$sql = 'SELECT q.question_id, q.lang_iso
+				FROM ' . $this->table_captcha_questions . ' q, ' . $this->table_captcha_answers . ' a
+				WHERE q.question_id = a.question_id
+				GROUP BY lang_iso';
+			$result = $db->sql_query($sql, 7200);
+
+			while ($row = $db->sql_fetchrow($result))
+			{
+				if (empty($this->question_lang))
+				{
+					$this->question_lang = $row['lang_iso'];
+				}
 				$this->question_ids[$row['question_id']] = $row['question_id'];
 			}
 			$db->sql_freeresult($result);
@@ -125,7 +147,7 @@ class qa
 	*/
 	public function is_available()
 	{
-		global $config, $db, $phpbb_root_path, $phpEx, $user;
+		global $config, $db, $user;
 
 		// load language file for pretty display in the ACP dropdown
 		$user->add_lang('captcha_qa');
@@ -198,19 +220,25 @@ class qa
 	*/
 	function get_template()
 	{
-		global $template;
+		global $phpbb_log, $template, $user;
 
 		if ($this->is_solved())
 		{
 			return false;
 		}
+		else if (empty($this->question_text) || !count($this->question_ids))
+		{
+			/** @var \phpbb\log\log_interface $phpbb_log */
+			$phpbb_log->add('critical', $user->data['user_id'], $user->ip, 'LOG_ERROR_CAPTCHA', time(), array($user->lang('CONFIRM_QUESTION_MISSING')));
+			return false;
+		}
 		else
 		{
 			$template->assign_vars(array(
-				'QA_CONFIRM_QUESTION'		=> $this->question_text,
-				'QA_CONFIRM_ID'				=> $this->confirm_id,
-				'S_CONFIRM_CODE'			=> true,
-				'S_TYPE'					=> $this->type,
+				'QA_CONFIRM_QUESTION'	=> $this->question_text,
+				'QA_CONFIRM_ID'			=> $this->confirm_id,
+				'S_CONFIRM_CODE'		=> true,
+				'S_TYPE'				=> $this->type,
 			));
 
 			return 'captcha_qa.html';
@@ -263,7 +291,7 @@ class qa
 	*/
 	function garbage_collect($type = 0)
 	{
-		global $db, $config;
+		global $db;
 
 		$sql = 'SELECT c.confirm_id
 			FROM ' . $this->table_qa_confirm . ' c
@@ -283,7 +311,7 @@ class qa
 			}
 			while ($row = $db->sql_fetchrow($result));
 
-			if (sizeof($sql_in))
+			if (count($sql_in))
 			{
 				$sql = 'DELETE FROM ' . $this->table_qa_confirm . '
 					WHERE ' . $db->sql_in_set('confirm_id', $sql_in);
@@ -309,7 +337,6 @@ class qa
 		global $phpbb_container;
 
 		$db_tool = $phpbb_container->get('dbal.tools');
-
 		$schemas = array(
 				$this->table_captcha_questions		=> array (
 					'COLUMNS' => array(
@@ -364,13 +391,15 @@ class qa
 	*/
 	function validate()
 	{
-		global $config, $db, $user;
+		global $phpbb_log, $user;
 
 		$error = '';
 
-		if (!sizeof($this->question_ids))
+		if (!count($this->question_ids))
 		{
-			return false;
+			/** @var \phpbb\log\log_interface $phpbb_log */
+			$phpbb_log->add('critical', $user->data['user_id'], $user->ip, 'LOG_ERROR_CAPTCHA', time(), array($user->lang('CONFIRM_QUESTION_MISSING')));
+			return $user->lang('CONFIRM_QUESTION_MISSING');
 		}
 
 		if (!$this->confirm_id)
@@ -410,9 +439,9 @@ class qa
 	{
 		global $db, $user;
 
-		if (!sizeof($this->question_ids))
+		if (!count($this->question_ids))
 		{
-			return false;
+			return;
 		}
 		$this->confirm_id = md5(unique_id($user->ip));
 		$this->question = (int) array_rand($this->question_ids);
@@ -436,9 +465,9 @@ class qa
 	{
 		global $db, $user;
 
-		if (!sizeof($this->question_ids))
+		if (!count($this->question_ids))
 		{
-			return false;
+			return;
 		}
 
 		$this->question = (int) array_rand($this->question_ids);
@@ -507,7 +536,7 @@ class qa
 	{
 		global $db, $user;
 
-		if (!strlen($this->confirm_id) || !sizeof($this->question_ids))
+		if (!strlen($this->confirm_id) || !count($this->question_ids))
 		{
 			return false;
 		}
@@ -611,8 +640,7 @@ class qa
 	*/
 	function acp_page($id, &$module)
 	{
-		global $db, $user, $auth, $template, $phpbb_log, $request;
-		global $config, $phpbb_root_path, $phpbb_admin_path, $phpEx;
+		global $config, $request, $phpbb_log, $template, $user;
 
 		$user->add_lang('acp/board');
 		$user->add_lang('captcha_qa');
@@ -674,11 +702,7 @@ class qa
 		else
 		{
 			// okay, show the editor
-			$error = false;
-			$input_question = $request->variable('question_text', '', true);
-			$input_answers = $request->variable('answers', '', true);
-			$input_lang = $request->variable('lang_iso', '', true);
-			$input_strict = $request->variable('strict', false);
+			$question_input = $this->acp_get_question_input();
 			$langs = $this->get_languages();
 
 			foreach ($langs as $lang => $entry)
@@ -697,13 +721,11 @@ class qa
 			{
 				if ($question = $this->acp_get_question_data($question_id))
 				{
-					$answers = (isset($input_answers[$lang])) ? $input_answers[$lang] : implode("\n", $question['answers']);
-
 					$template->assign_vars(array(
-						'QUESTION_TEXT'		=> ($input_question) ? $input_question : $question['question_text'],
-						'LANG_ISO'			=> ($input_lang) ? $input_lang : $question['lang_iso'],
-						'STRICT'			=> (isset($_REQUEST['strict'])) ? $input_strict : $question['strict'],
-						'ANSWERS'			=> $answers,
+						'QUESTION_TEXT'		=> ($question_input['question_text']) ? $question_input['question_text'] : $question['question_text'],
+						'LANG_ISO'			=> ($question_input['lang_iso']) ? $question_input['lang_iso'] : $question['lang_iso'],
+						'STRICT'			=> (isset($_REQUEST['strict'])) ? $question_input['strict'] : $question['strict'],
+						'ANSWERS'			=> implode("\n", $question['answers']),
 					));
 				}
 				else
@@ -714,18 +736,16 @@ class qa
 			else
 			{
 				$template->assign_vars(array(
-					'QUESTION_TEXT'		=> $input_question,
-					'LANG_ISO'			=> $input_lang,
-					'STRICT'			=> $input_strict,
-					'ANSWERS'			=> $input_answers,
+					'QUESTION_TEXT'		=> $question_input['question_text'],
+					'LANG_ISO'			=> $question_input['lang_iso'],
+					'STRICT'			=> $question_input['strict'],
+					'ANSWERS'			=> (is_array($question_input['answers'])) ? implode("\n", $question_input['answers']) : '',
 				));
 			}
 
 			if ($submit && check_form_key($form_key))
 			{
-				$data = $this->acp_get_question_input();
-
-				if (!$this->validate_input($data))
+				if (!$this->validate_input($question_input))
 				{
 					$template->assign_vars(array(
 						'S_ERROR'			=> true,
@@ -735,11 +755,11 @@ class qa
 				{
 					if ($question_id)
 					{
-						$this->acp_update_question($data, $question_id);
+						$this->acp_update_question($question_input, $question_id);
 					}
 					else
 					{
-						$this->acp_add_question($data);
+						$this->acp_add_question($question_input);
 					}
 
 					$phpbb_log->add('admin', $user->data['user_id'], $user->ip, 'LOG_CONFIG_VISUAL');
@@ -819,6 +839,8 @@ class qa
 
 			return $question;
 		}
+
+		return false;
 	}
 
 	/**
@@ -829,13 +851,21 @@ class qa
 		global $request;
 
 		$answers = $request->variable('answers', '', true);
+
+		// Convert answers into array and filter if answers are set
+		if (strlen($answers))
+		{
+			$answers = array_filter(array_map('trim', explode("\n", $answers)), function ($value) {
+				return $value !== '';
+			});
+		}
+
 		$question = array(
 			'question_text'	=> $request->variable('question_text', '', true),
 			'strict'		=> $request->variable('strict', false),
 			'lang_iso'		=> $request->variable('lang_iso', ''),
-			'answers'		=> (strlen($answers)) ? explode("\n", $answers) : '',
+			'answers'		=> $answers,
 		);
-
 		return $question;
 	}
 
@@ -949,7 +979,7 @@ class qa
 
 		if (!isset($langs[$question_data['lang_iso']]) ||
 			!strlen($question_data['question_text']) ||
-			!sizeof($question_data['answers']) ||
+			!count($question_data['answers']) ||
 			!is_array($question_data['answers']))
 		{
 			return false;

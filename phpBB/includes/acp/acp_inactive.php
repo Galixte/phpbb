@@ -32,9 +32,12 @@ class acp_inactive
 	function main($id, $mode)
 	{
 		global $config, $db, $user, $auth, $template, $phpbb_container, $phpbb_log, $request;
-		global $phpbb_root_path, $phpbb_admin_path, $phpEx, $table_prefix;
+		global $phpbb_root_path, $phpbb_admin_path, $phpEx;
 
-		include($phpbb_root_path . 'includes/functions_user.' . $phpEx);
+		if (!function_exists('user_active_flip'))
+		{
+			include($phpbb_root_path . 'includes/functions_user.' . $phpEx);
+		}
 
 		$user->add_lang('memberlist');
 
@@ -67,7 +70,7 @@ class acp_inactive
 		$s_limit_days = $s_sort_key = $s_sort_dir = $u_sort_param = '';
 		gen_sort_selects($limit_days, $sort_by_text, $sort_days, $sort_key, $sort_dir, $s_limit_days, $s_sort_key, $s_sort_dir, $u_sort_param);
 
-		if ($submit && sizeof($mark))
+		if ($submit && count($mark))
 		{
 			if ($action !== 'delete' && !check_form_key($form_key))
 			{
@@ -111,7 +114,10 @@ class acp_inactive
 
 						if ($config['require_activation'] == USER_ACTIVATION_ADMIN && !empty($inactive_users))
 						{
-							include_once($phpbb_root_path . 'includes/functions_messenger.' . $phpEx);
+							if (!class_exists('messenger'))
+							{
+								include($phpbb_root_path . 'includes/functions_messenger.' . $phpEx);
+							}
 
 							$messenger = new messenger(false);
 
@@ -158,6 +164,7 @@ class acp_inactive
 						{
 							if (!$auth->acl_get('a_userdel'))
 							{
+								send_status_line(403, 'Forbidden');
 								trigger_error($user->lang['NO_AUTH_OPERATION'] . adm_back_link($this->u_action), E_USER_WARNING);
 							}
 
@@ -200,7 +207,10 @@ class acp_inactive
 					if ($row = $db->sql_fetchrow($result))
 					{
 						// Send the messages
-						include_once($phpbb_root_path . 'includes/functions_messenger.' . $phpEx);
+						if (!class_exists('messenger'))
+						{
+							include($phpbb_root_path . 'includes/functions_messenger.' . $phpEx);
+						}
 
 						$messenger = new messenger();
 						$usernames = $user_ids = array();
@@ -275,9 +285,10 @@ class acp_inactive
 
 				'REMINDED_EXPLAIN'	=> $user->lang('USER_LAST_REMINDED', (int) $row['user_reminded'], $user->format_date($row['user_reminded_time'])),
 
-				'USERNAME_FULL'		=> get_username_string('full', $row['user_id'], $row['username'], $row['user_colour'], false, append_sid("{$phpbb_admin_path}index.$phpEx", 'i=users&amp;mode=overview')),
+				'USERNAME_FULL'		=> get_username_string('full', $row['user_id'], $row['username'], $row['user_colour'], false, append_sid("{$phpbb_admin_path}index.$phpEx", 'i=users&amp;mode=overview&amp;redirect=acp_inactive')),
 				'USERNAME'			=> get_username_string('username', $row['user_id'], $row['username'], $row['user_colour']),
 				'USER_COLOR'		=> get_username_string('colour', $row['user_id'], $row['username'], $row['user_colour']),
+				'USER_EMAIL'		=> $row['user_email'],
 
 				'U_USER_ADMIN'	=> append_sid("{$phpbb_admin_path}index.$phpEx", "i=users&amp;mode=overview&amp;u={$row['user_id']}"),
 				'U_SEARCH_USER'	=> ($auth->acl_get('u_search')) ? append_sid("{$phpbb_root_path}search.$phpEx", "author_id={$row['user_id']}&amp;sr=posts") : '',

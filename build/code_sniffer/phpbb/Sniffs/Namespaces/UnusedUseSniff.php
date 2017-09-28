@@ -87,6 +87,11 @@ class phpbb_Sniffs_Namespaces_UnusedUseSniff implements PHP_CodeSniffer_Sniff
 				$old_simple_statement = $simple_statement;
 
 				$simple_class_name_start = $phpcsFile->findNext(array(T_NS_SEPARATOR, T_STRING), ($simple_statement + 1));
+
+				if ($simple_class_name_start === false) {
+					continue;
+				}
+
 				$simple_class_name_end = $phpcsFile->findNext($find, ($simple_statement + 1), null, true);
 
 				$simple_class_name = trim($phpcsFile->getTokensAsString($simple_class_name_start, ($simple_class_name_end - $simple_class_name_start)));
@@ -129,63 +134,18 @@ class phpbb_Sniffs_Namespaces_UnusedUseSniff implements PHP_CodeSniffer_Sniff
 			}
 		}
 
+		$old_docblock = $stackPtr;
+		while (($docblock = $phpcsFile->findNext(T_DOC_COMMENT_CLOSE_TAG, ($old_docblock + 1))) !== false)
+		{
+			$old_docblock = $docblock;
+			$ok = $this->checkDocblock($phpcsFile, $docblock, $tokens, $class_name_full, $class_name_short) ? true : $ok;
+		}
+
 		// Checks in type hinting
 		$old_function_declaration = $stackPtr;
 		while (($function_declaration = $phpcsFile->findNext(T_FUNCTION, ($old_function_declaration + 1))) !== false)
 		{
 			$old_function_declaration = $function_declaration;
-
-			// Check docblocks
-			$find = array(
-				T_COMMENT,
-				T_DOC_COMMENT,
-				T_CLASS,
-				T_FUNCTION,
-				T_OPEN_TAG,
-			);
-
-			$comment_end = $phpcsFile->findPrevious($find, ($function_declaration - 1));
-			if ($comment_end !== false)
-			{
-				if (!$tokens[$comment_end]['code'] !== T_DOC_COMMENT)
-				{
-					$comment_start = ($phpcsFile->findPrevious(T_DOC_COMMENT, ($comment_end - 1), null, true) + 1);
-					$comment      = $phpcsFile->getTokensAsString($comment_start, ($comment_end - $comment_start + 1));
-
-					try
-					{
-						$comment_parser = new PHP_CodeSniffer_CommentParser_FunctionCommentParser($comment, $phpcsFile);
-						$comment_parser->parse();
-
-						// Check @param
-						foreach ($comment_parser->getParams() as $param) {
-							$type = $param->getType();
-							$types = explode('|', str_replace('[]', '', $type));
-							foreach ($types as $type)
-							{
-								$ok = $this->check($phpcsFile, $type, $class_name_full, $class_name_short, $param->getLine() + $comment_start) ? true : $ok;
-							}
-						}
-
-						// Check @return
-						$return = $comment_parser->getReturn();
-						if ($return !== null)
-						{
-							$type = $return->getValue();
-							$types = explode('|', str_replace('[]', '', $type));
-							foreach ($types as $type)
-							{
-								$ok = $this->check($phpcsFile, $type, $class_name_full, $class_name_short, $return->getLine() + $comment_start) ? true : $ok;
-							}
-						}
-					}
-					catch (PHP_CodeSniffer_CommentParser_ParserException $e)
-					{
-						$line = ($e->getLineWithinComment() + $comment_start);
-						$phpcsFile->addError($e->getMessage(), $line, 'FailedParse');
-					}
-				}
-			}
 
 			// Check type hint
 			$params = $phpcsFile->getMethodParameters($function_declaration);
@@ -193,6 +153,20 @@ class phpbb_Sniffs_Namespaces_UnusedUseSniff implements PHP_CodeSniffer_Sniff
 			{
 				$ok = $this->check($phpcsFile, $param['type_hint'], $class_name_full, $class_name_short, $function_declaration) ? true : $ok;
 			}
+		}
+
+		// Checks in catch blocks
+		$old_catch = $stackPtr;
+		while (($catch = $phpcsFile->findNext(T_CATCH, ($old_catch + 1))) !== false)
+		{
+			$old_catch = $catch;
+
+			$caught_class_name_start = $phpcsFile->findNext(array(T_NS_SEPARATOR, T_STRING), $catch + 1);
+			$caught_class_name_end = $phpcsFile->findNext($find, $caught_class_name_start + 1, null, true);
+
+			$caught_class_name = trim($phpcsFile->getTokensAsString($caught_class_name_start, ($caught_class_name_end - $caught_class_name_start)));
+
+			$ok = $this->check($phpcsFile, $caught_class_name, $class_name_full, $class_name_short, $catch) ? true : $ok;
 		}
 
 		if (!$ok)
@@ -230,5 +204,50 @@ class phpbb_Sniffs_Namespaces_UnusedUseSniff implements PHP_CodeSniffer_Sniff
 
 		return false;
 
+	}
+
+	/**
+	 * @param PHP_CodeSniffer_File $phpcsFile
+	 * @param int $field
+	 * @param array $tokens
+	 * @param string $class_name_full
+	 * @param string $class_name_short
+	 * @param bool $ok
+	 *
+	 * @return bool
+	 */
+	private function checkDocblock(PHP_CodeSniffer_File $phpcsFile, $comment_end, $tokens, $class_name_full, $class_name_short)
+	{
+		$ok = false;
+
+		$comment_start = $tokens[$comment_end]['comment_opener'];
+		foreach ($tokens[$comment_start]['comment_tags'] as $tag)
+		{
+			if (!in_array($tokens[$tag]['content'], array('@param', '@var', '@return', '@throws'), true))
+			{
+				continue;
+			}
+
+			$classes = $tokens[($tag + 2)]['content'];
+			$space = strpos($classes, ' ');
+			if ($space !== false)
+			{
+				$classes = substr($classes, 0, $space);
+			}
+
+			$tab = strpos($classes, "\t");
+			if ($tab !== false)
+			{
+				$classes = substr($classes, 0, $tab);
+			}
+
+			$classes = explode('|', str_replace('[]', '', $classes));
+			foreach ($classes as $class)
+			{
+				$ok = $this->check($phpcsFile, $class, $class_name_full, $class_name_short, $tokens[$tag + 2]['line']) ? true : $ok;
+			}
+		}
+
+		return $ok;
 	}
 }

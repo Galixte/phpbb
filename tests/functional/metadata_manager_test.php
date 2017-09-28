@@ -24,11 +24,18 @@ class phpbb_functional_metadata_manager_test extends phpbb_functional_test_case
 		'foo/bar/',
 	);
 
+	public function tearDown()
+	{
+		$this->purge_cache();
+
+		parent::tearDown();
+	}
+
 	static public function setUpBeforeClass()
 	{
 		parent::setUpBeforeClass();
 
-		self::$helper = new phpbb_test_case_helpers(self);
+		self::$helper = new phpbb_test_case_helpers(__CLASS__);
 		self::$helper->copy_ext_fixtures(dirname(__FILE__) . '/fixtures/ext/', self::$fixtures);
 	}
 

@@ -13,6 +13,8 @@
 
 namespace phpbb;
 
+use phpbb\filesystem\helper as filesystem_helper;
+
 /**
 * Session class
 */
@@ -38,7 +40,7 @@ class session
 	 */
 	static function extract_current_page($root_path)
 	{
-		global $request, $symfony_request, $phpbb_filesystem;
+		global $request, $symfony_request;
 
 		$page_array = array();
 
@@ -85,21 +87,30 @@ class session
 		$page_name = (substr($script_name, -1, 1) == '/') ? '' : basename($script_name);
 		$page_name = urlencode(htmlspecialchars($page_name));
 
-		$symfony_request_path = $phpbb_filesystem->clean_path($symfony_request->getPathInfo());
+		$symfony_request_path = filesystem_helper::clean_path($symfony_request->getPathInfo());
 		if ($symfony_request_path !== '/')
 		{
 			$page_name .= str_replace('%2F', '/', urlencode($symfony_request_path));
 		}
 
-		// current directory within the phpBB root (for example: adm)
-		$root_dirs = explode('/', str_replace('\\', '/', phpbb_realpath($root_path)));
-		$page_dirs = explode('/', str_replace('\\', '/', phpbb_realpath('./')));
+		if (substr($root_path, 0, 2) === './' && strpos($root_path, '..') === false)
+		{
+			$root_dirs = explode('/', str_replace('\\', '/', rtrim($root_path, '/')));
+			$page_dirs = explode('/', str_replace('\\', '/', '.'));
+		}
+		else
+		{
+			// current directory within the phpBB root (for example: adm)
+			$root_dirs = explode('/', str_replace('\\', '/', filesystem_helper::realpath($root_path)));
+			$page_dirs = explode('/', str_replace('\\', '/', filesystem_helper::realpath('./')));
+		}
+
 		$intersection = array_intersect_assoc($root_dirs, $page_dirs);
 
 		$root_dirs = array_diff_assoc($root_dirs, $intersection);
 		$page_dirs = array_diff_assoc($page_dirs, $intersection);
 
-		$page_dir = str_repeat('../', sizeof($root_dirs)) . implode('/', $page_dirs);
+		$page_dir = str_repeat('../', count($root_dirs)) . implode('/', $page_dirs);
 
 		if ($page_dir && substr($page_dir, -1, 1) == '/')
 		{
@@ -118,8 +129,8 @@ class session
 
 		// The script path from the webroot to the phpBB root (for example: /phpBB3/)
 		$script_dirs = explode('/', $script_path);
-		array_splice($script_dirs, -sizeof($page_dirs));
-		$root_script_path = implode('/', $script_dirs) . (sizeof($root_dirs) ? '/' . implode('/', $root_dirs) : '');
+		array_splice($script_dirs, -count($page_dirs));
+		$root_script_path = implode('/', $script_dirs) . (count($root_dirs) ? '/' . implode('/', $root_dirs) : '');
 
 		// We are on the base level (phpBB root == webroot), lets adjust the variables a bit...
 		if (!$root_script_path)
@@ -219,7 +230,7 @@ class session
 	function session_begin($update_session_page = true)
 	{
 		global $phpEx, $SID, $_SID, $_EXTRA_URL, $db, $config, $phpbb_root_path;
-		global $request, $phpbb_container, $user, $phpbb_log;
+		global $request, $phpbb_container, $user, $phpbb_log, $phpbb_dispatcher;
 
 		// Give us some basic information
 		$this->time_now				= time();
@@ -281,11 +292,21 @@ class session
 
 		// Why no forwarded_for et al? Well, too easily spoofed. With the results of my recent requests
 		// it's pretty clear that in the majority of cases you'll at least be left with a proxy/cache ip.
-		$this->ip = htmlspecialchars_decode($request->server('REMOTE_ADDR'));
-		$this->ip = preg_replace('# {2,}#', ' ', str_replace(',', ' ', $this->ip));
+		$ip = htmlspecialchars_decode($request->server('REMOTE_ADDR'));
+		$ip = preg_replace('# {2,}#', ' ', str_replace(',', ' ', $ip));
+
+		/**
+		* Event to alter user IP address
+		*
+		* @event core.session_ip_after
+		* @var	string	ip	REMOTE_ADDR
+		* @since 3.1.10-RC1
+		*/
+		$vars = array('ip');
+		extract($phpbb_dispatcher->trigger_event('core.session_ip_after', compact($vars)));
 
 		// split the list of IPs
-		$ips = explode(' ', trim($this->ip));
+		$ips = explode(' ', trim($ip));
 
 		// Default IP if REMOTE_ADDR is invalid
 		$this->ip = '127.0.0.1';
@@ -447,42 +468,12 @@ class session
 
 					if (!$session_expired)
 					{
-						// Only update session DB a minute or so after last update or if page changes
-						if ($this->time_now - $this->data['session_time'] > 60 || ($this->update_session_page && $this->data['session_page'] != $this->page['page']))
-						{
-							$sql_ary = array('session_time' => $this->time_now);
-
-							// Do not update the session page for ajax requests, so the view online still works as intended
-							if ($this->update_session_page && !$request->is_ajax())
-							{
-								$sql_ary['session_page'] = substr($this->page['page'], 0, 199);
-								$sql_ary['session_forum_id'] = $this->page['forum'];
-							}
-
-							$db->sql_return_on_error(true);
-
-							$this->update_session($sql_ary);
-
-							$db->sql_return_on_error(false);
-
-							// If the database is not yet updated, there will be an error due to the session_forum_id
-							// @todo REMOVE for 3.0.2
-							if ($result === false)
-							{
-								unset($sql_ary['session_forum_id']);
-
-								$this->update_session($sql_ary);
-							}
-
-							if ($this->data['user_id'] != ANONYMOUS && !empty($config['new_member_post_limit']) && $this->data['user_new'] && $config['new_member_post_limit'] <= $this->data['user_posts'])
-							{
-								$this->leave_newly_registered();
-							}
-						}
-
 						$this->data['is_registered'] = ($this->data['user_id'] != ANONYMOUS && ($this->data['user_type'] == USER_NORMAL || $this->data['user_type'] == USER_FOUNDER)) ? true : false;
 						$this->data['is_bot'] = (!$this->data['is_registered'] && $this->data['user_id'] != ANONYMOUS) ? true : false;
 						$this->data['user_lang'] = basename($this->data['user_lang']);
+
+						// Is user banned? Are they excluded? Won't return on ban, exists within method
+						$this->check_ban_for_current_session($config);
 
 						return true;
 					}
@@ -527,7 +518,7 @@ class session
 	*/
 	function session_create($user_id = false, $set_admin = false, $persist_login = false, $viewonline = true)
 	{
-		global $SID, $_SID, $db, $config, $cache, $phpbb_root_path, $phpEx, $phpbb_container;
+		global $SID, $_SID, $db, $config, $cache, $phpbb_container, $phpbb_dispatcher;
 
 		$this->data = array();
 
@@ -595,12 +586,12 @@ class session
 		$provider = $provider_collection->get_provider();
 		$this->data = $provider->autologin();
 
-		if ($user_id !== false && sizeof($this->data) && $this->data['user_id'] != $user_id)
+		if ($user_id !== false && isset($this->data['user_id']) && $this->data['user_id'] != $user_id)
 		{
 			$this->data = array();
 		}
 
-		if (sizeof($this->data))
+		if (isset($this->data['user_id']))
 		{
 			$this->cookie_data['k'] = '';
 			$this->cookie_data['u'] = $this->data['user_id'];
@@ -608,7 +599,7 @@ class session
 
 		// If we're presented with an autologin key we'll join against it.
 		// Else if we've been passed a user_id we'll grab data based on that
-		if (isset($this->cookie_data['k']) && $this->cookie_data['k'] && $this->cookie_data['u'] && !sizeof($this->data))
+		if (isset($this->cookie_data['k']) && $this->cookie_data['k'] && $this->cookie_data['u'] && empty($this->data))
 		{
 			$sql = 'SELECT u.*
 				FROM ' . USERS_TABLE . ' u, ' . SESSIONS_KEYS_TABLE . ' k
@@ -628,7 +619,7 @@ class session
 			$db->sql_freeresult($result);
 		}
 
-		if ($user_id !== false && !sizeof($this->data))
+		if ($user_id !== false && empty($this->data))
 		{
 			$this->cookie_data['k'] = '';
 			$this->cookie_data['u'] = $user_id;
@@ -656,7 +647,7 @@ class session
 		// User does not exist
 		// User is inactive
 		// User is bot
-		if (!sizeof($this->data) || !is_array($this->data))
+		if (!is_array($this->data) || !count($this->data))
 		{
 			$this->cookie_data['k'] = '';
 			$this->cookie_data['u'] = ($bot) ? $bot : ANONYMOUS;
@@ -698,19 +689,7 @@ class session
 		// session exists in which case session_id will also be set
 
 		// Is user banned? Are they excluded? Won't return on ban, exists within method
-		if ($this->data['user_type'] != USER_FOUNDER)
-		{
-			if (!$config['forwarded_for_check'])
-			{
-				$this->check_ban($this->data['user_id'], $this->ip);
-			}
-			else
-			{
-				$ips = explode(' ', $this->forwarded_for);
-				$ips[] = $this->ip;
-				$this->check_ban($this->data['user_id'], $ips);
-			}
-		}
+		$this->check_ban_for_current_session($config);
 
 		$this->data['is_registered'] = (!$bot && $this->data['user_id'] != ANONYMOUS && ($this->data['user_type'] == USER_NORMAL || $this->data['user_type'] == USER_FOUNDER)) ? true : false;
 		$this->data['is_bot'] = ($bot) ? true : false;
@@ -743,18 +722,6 @@ class session
 				// Only update session DB a minute or so after last update or if page changes
 				if ($this->time_now - $this->data['session_time'] > 60 || ($this->update_session_page && $this->data['session_page'] != $this->page['page']))
 				{
-					$this->data['session_time'] = $this->data['session_last_visit'] = $this->time_now;
-
-					$sql_ary = array('session_time' => $this->time_now, 'session_last_visit' => $this->time_now, 'session_admin' => 0);
-
-					if ($this->update_session_page)
-					{
-						$sql_ary['session_page'] = substr($this->page['page'], 0, 199);
-						$sql_ary['session_forum_id'] = $this->page['forum'];
-					}
-
-					$this->update_session($sql_ary);
-
 					// Update the last visit time
 					$sql = 'UPDATE ' . USERS_TABLE . '
 						SET user_lastvisit = ' . (int) $this->data['session_time'] . '
@@ -873,7 +840,7 @@ class session
 			$sql = 'SELECT COUNT(session_id) AS sessions
 					FROM ' . SESSIONS_TABLE . '
 					WHERE session_user_id = ' . (int) $this->data['user_id'] . '
-					AND session_time >= ' . (int) ($this->time_now - (max($config['session_length'], $config['form_token_lifetime'])));
+					AND session_time >= ' . (int) ($this->time_now - (max((int) $config['session_length'], (int) $config['form_token_lifetime'])));
 			$result = $db->sql_query($sql);
 			$row = $db->sql_fetchrow($result);
 			$db->sql_freeresult($result);
@@ -902,6 +869,19 @@ class session
 			$_SID = '';
 		}
 
+		$session_data = $sql_ary;
+		/**
+		* Event to send new session data to extension
+		* Read-only event
+		*
+		* @event core.session_create_after
+		* @var	array		session_data				Associative array of session keys to be updated
+		* @since 3.1.6-RC1
+		*/
+		$vars = array('session_data');
+		extract($phpbb_dispatcher->trigger_event('core.session_create_after', compact($vars)));
+		unset($session_data);
+
 		return true;
 	}
 
@@ -915,12 +895,29 @@ class session
 	*/
 	function session_kill($new_session = true)
 	{
-		global $SID, $_SID, $db, $config, $phpbb_root_path, $phpEx, $phpbb_container;
+		global $SID, $_SID, $db, $phpbb_container, $phpbb_dispatcher;
 
 		$sql = 'DELETE FROM ' . SESSIONS_TABLE . "
 			WHERE session_id = '" . $db->sql_escape($this->session_id) . "'
 				AND session_user_id = " . (int) $this->data['user_id'];
 		$db->sql_query($sql);
+
+		$user_id = (int) $this->data['user_id'];
+		$session_id = $this->session_id;
+		/**
+		* Event to send session kill information to extension
+		* Read-only event
+		*
+		* @event core.session_kill_after
+		* @var	int		user_id				user_id of the session user.
+		* @var	string		session_id				current user's session_id
+		* @var	bool	new_session 	should we create new session for user
+		* @since 3.1.6-RC1
+		*/
+		$vars = array('user_id', 'session_id', 'new_session');
+		extract($phpbb_dispatcher->trigger_event('core.session_kill_after', compact($vars)));
+		unset($user_id);
+		unset($session_id);
 
 		// Allow connecting logout with external auth method logout
 		/* @var $provider_collection \phpbb\auth\provider_collection */
@@ -990,7 +987,7 @@ class session
 	*/
 	function session_gc()
 	{
-		global $db, $config, $phpbb_root_path, $phpEx, $phpbb_container;
+		global $db, $config, $phpbb_container, $phpbb_dispatcher;
 
 		$batch_size = 10;
 
@@ -1027,7 +1024,7 @@ class session
 		}
 		$db->sql_freeresult($result);
 
-		if (sizeof($del_user_id))
+		if (count($del_user_id))
 		{
 			// Delete expired sessions
 			$sql = 'DELETE FROM ' . SESSIONS_TABLE . '
@@ -1059,6 +1056,14 @@ class session
 			$db->sql_query($sql);
 		}
 
+		/**
+		* Event to trigger extension on session_gc
+		*
+		* @event core.session_gc_after
+		* @since 3.1.6-RC1
+		*/
+		$phpbb_dispatcher->dispatch('core.session_gc_after');
+
 		return;
 	}
 
@@ -1075,6 +1080,12 @@ class session
 	function set_cookie($name, $cookiedata, $cookietime, $httponly = true)
 	{
 		global $config;
+
+		// If headers are already set, we just return
+		if (headers_sent())
+		{
+			return;
+		}
 
 		$name_data = rawurlencode($config['cookie_name'] . '_' . $name) . '=' . rawurlencode($cookiedata);
 		$expire = gmdate('D, d-M-Y H:i:s \\G\\M\\T', $cookietime);
@@ -1147,7 +1158,7 @@ class session
 			$where_sql[] = $_sql;
 		}
 
-		$sql .= (sizeof($where_sql)) ? implode(' AND ', $where_sql) : '';
+		$sql .= (count($where_sql)) ? implode(' AND ', $where_sql) : '';
 		$result = $db->sql_query($sql, $cache_ttl);
 
 		$ban_triggered_by = 'user';
@@ -1227,7 +1238,7 @@ class session
 
 		if ($banned && !$return)
 		{
-			global $template, $phpbb_root_path, $phpEx;
+			global $phpbb_root_path, $phpEx;
 
 			// If the session is empty we need to create a valid one...
 			if (empty($this->session_id))
@@ -1276,9 +1287,6 @@ class session
 			$message .= ($ban_row['ban_give_reason']) ? '<br /><br />' . sprintf($this->lang['BOARD_BAN_REASON'], $ban_row['ban_give_reason']) : '';
 			$message .= '<br /><br /><em>' . $this->lang['BAN_TRIGGERED_BY_' . strtoupper($ban_triggered_by)] . '</em>';
 
-			// To circumvent session_begin returning a valid value and the check_ban() not called on second page view, we kill the session again
-			$this->session_kill(false);
-
 			// A very special case... we are within the cron script which is not supposed to print out the ban message... show blank page
 			if (defined('IN_CRON'))
 			{
@@ -1287,10 +1295,35 @@ class session
 				exit;
 			}
 
+			// To circumvent session_begin returning a valid value and the check_ban() not called on second page view, we kill the session again
+			$this->session_kill(false);
+
 			trigger_error($message);
 		}
 
 		return ($banned && $ban_row['ban_give_reason']) ? $ban_row['ban_give_reason'] : $banned;
+	}
+
+	/**
+	 * Check the current session for bans
+	 *
+	 * @return true if session user is banned.
+	 */
+	protected function check_ban_for_current_session($config)
+	{
+		if (!defined('SKIP_CHECK_BAN') && $this->data['user_type'] != USER_FOUNDER)
+		{
+			if (!$config['forwarded_for_check'])
+			{
+				$this->check_ban($this->data['user_id'], $this->ip);
+			}
+			else
+			{
+				$ips = explode(' ', $this->forwarded_for);
+				$ips[] = $this->ip;
+				$this->check_ban($this->data['user_id'], $ips);
+			}
+		}
 	}
 
 	/**
@@ -1404,7 +1437,7 @@ class session
 	*/
 	function set_login_key($user_id = false, $key = false, $user_ip = false)
 	{
-		global $config, $db;
+		global $db;
 
 		$user_id = ($user_id === false) ? $this->data['user_id'] : $user_id;
 		$user_ip = ($user_ip === false) ? $this->ip : $user_ip;
@@ -1414,7 +1447,7 @@ class session
 
 		$sql_ary = array(
 			'key_id'		=> (string) md5($key_id),
-			'last_ip'		=> (string) $this->ip,
+			'last_ip'		=> (string) $user_ip,
 			'last_login'	=> (int) time()
 		);
 
@@ -1451,7 +1484,7 @@ class session
 	*/
 	function reset_login_keys($user_id = false)
 	{
-		global $config, $db;
+		global $db;
 
 		$user_id = ($user_id === false) ? (int) $this->data['user_id'] : (int) $user_id;
 
@@ -1552,12 +1585,61 @@ class session
 	*/
 	public function update_session($session_data, $session_id = null)
 	{
-		global $db;
+		global $db, $phpbb_dispatcher;
 
 		$session_id = ($session_id) ? $session_id : $this->session_id;
 
 		$sql = 'UPDATE ' . SESSIONS_TABLE . ' SET ' . $db->sql_build_array('UPDATE', $session_data) . "
 			WHERE session_id = '" . $db->sql_escape($session_id) . "'";
 		$db->sql_query($sql);
+
+		/**
+		* Event to send update session information to extension
+		* Read-only event
+		*
+		* @event core.update_session_after
+		* @var	array		session_data				Associative array of session keys to be updated
+		* @var	string		session_id				current user's session_id
+		* @since 3.1.6-RC1
+		*/
+		$vars = array('session_data', 'session_id');
+		extract($phpbb_dispatcher->trigger_event('core.update_session_after', compact($vars)));
+	}
+
+	public function update_session_infos()
+	{
+		global $config, $db, $request;
+
+		// No need to update if it's a new session. Informations are already inserted by session_create()
+		if (isset($this->data['session_created']) && $this->data['session_created'])
+		{
+			return;
+		}
+
+		// Only update session DB a minute or so after last update or if page changes
+		if ($this->time_now - ((isset($this->data['session_time'])) ? $this->data['session_time'] : 0) > 60 || ($this->update_session_page && $this->data['session_page'] != $this->page['page']))
+		{
+			$sql_ary = array('session_time' => $this->time_now);
+
+			// Do not update the session page for ajax requests, so the view online still works as intended
+			if ($this->update_session_page && !$request->is_ajax())
+			{
+				$sql_ary['session_page'] = substr($this->page['page'], 0, 199);
+				$sql_ary['session_forum_id'] = $this->page['forum'];
+			}
+
+			$db->sql_return_on_error(true);
+
+			$this->update_session($sql_ary);
+
+			$db->sql_return_on_error(false);
+
+			$this->data = array_merge($this->data, $sql_ary);
+
+			if ($this->data['user_id'] != ANONYMOUS && isset($config['new_member_post_limit']) && $this->data['user_new'] && $config['new_member_post_limit'] <= $this->data['user_posts'])
+			{
+				$this->leave_newly_registered();
+			}
+		}
 	}
 }

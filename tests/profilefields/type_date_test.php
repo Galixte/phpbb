@@ -25,7 +25,12 @@ class phpbb_profilefield_type_date_test extends phpbb_test_case
 	*/
 	public function setUp()
 	{
-		$this->user = $this->getMock('\phpbb\user', array(), array('\phpbb\datetime'));
+		global $phpbb_root_path, $phpEx;
+
+		$this->user = $this->createMock('\phpbb\user', array(), array(
+			new \phpbb\language\language(new \phpbb\language\language_file_loader($phpbb_root_path, $phpEx)),
+			'\phpbb\datetime'
+		));
 		$this->user->expects($this->any())
 			->method('lang')
 			->will($this->returnCallback(array($this, 'return_callback_implode')));
@@ -40,8 +45,8 @@ class phpbb_profilefield_type_date_test extends phpbb_test_case
 			'DATE_FORMAT' => 'm/d/Y',
 		);
 
-		$request = $this->getMock('\phpbb\request\request');
-		$template = $this->getMock('\phpbb\template\template');
+		$request = $this->createMock('\phpbb\request\request');
+		$template = $this->createMock('\phpbb\template\template');
 
 		$this->cp = new \phpbb\profilefields\type\type_date(
 			$request,

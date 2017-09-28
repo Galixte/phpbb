@@ -40,7 +40,7 @@ if (!class_exists($search_type))
 }
 
 $error = false;
-$search = new $search_type($error, $phpbb_root_path, $phpEx, $auth, $config, $db, $user);
+$search = new $search_type($error, $phpbb_root_path, $phpEx, $auth, $config, $db, $user, $phpbb_dispatcher);
 
 if ($error)
 {
@@ -89,7 +89,7 @@ for(;$postcounter <= $max_post_id; $postcounter += $batchsize)
 	$rowset = $db->sql_fetchrowset($result);
 	$db->sql_freeresult($result);
 
-	$post_rows = sizeof($rowset);
+	$post_rows = count($rowset);
 	
 	if( $post_rows )
 	{

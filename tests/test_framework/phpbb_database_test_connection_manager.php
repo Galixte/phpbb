@@ -11,7 +11,6 @@
 *
 */
 
-require_once dirname(__FILE__) . '/../../phpBB/includes/functions_install.php';
 require_once dirname(__FILE__) . '/phpbb_database_connection_odbc_pdo_wrapper.php';
 
 class phpbb_database_test_connection_manager
@@ -56,7 +55,6 @@ class phpbb_database_test_connection_manager
 
 		switch ($this->dbms['PDO'])
 		{
-			case 'sqlite2':
 			case 'sqlite':	// SQLite3 driver
 				$dsn .= $this->config['dbhost'];
 			break;
@@ -85,11 +83,18 @@ class phpbb_database_test_connection_manager
 			break;
 
 			default:
-				$dsn .= 'host=' . $this->config['dbhost'];
-
-				if ($this->config['dbport'])
+				if (!empty($this->config['dbport']) && !is_numeric($this->config['dbport']) && $this->dbms['PDO'] != 'pgsql')
 				{
-					$dsn .= ';port=' . $this->config['dbport'];
+					$dsn .= 'unix_socket=' . $this->config['dbport'];
+				}
+				else
+				{
+					$dsn .= 'host=' . $this->config['dbhost'];
+
+					if ($this->config['dbport'])
+					{
+						$dsn .= ';port=' . $this->config['dbport'];
+					}
 				}
 
 				if ($use_db)
@@ -187,7 +192,6 @@ class phpbb_database_test_connection_manager
 	{
 		switch ($this->config['dbms'])
 		{
-			case 'phpbb\db\driver\sqlite':
 			case 'phpbb\db\driver\sqlite3':
 				$this->connect();
 				// Drop all of the tables
@@ -261,12 +265,6 @@ class phpbb_database_test_connection_manager
 			case 'phpbb\db\driver\mysql':
 			case 'phpbb\db\driver\mysqli':
 				$sql = 'SHOW TABLES';
-			break;
-
-			case 'phpbb\db\driver\sqlite':
-				$sql = 'SELECT name
-					FROM sqlite_master
-					WHERE type = "table"';
 			break;
 
 			case 'phpbb\db\driver\sqlite3':
@@ -344,10 +342,13 @@ class phpbb_database_test_connection_manager
 
 		if (file_exists($filename))
 		{
-			$queries = file_get_contents($filename);
-			$sql = phpbb_remove_comments($queries);
+			global $phpbb_root_path;
 
-			$sql = split_sql_file($sql, $this->dbms['DELIM']);
+			$queries = file_get_contents($filename);
+
+			$db_helper = new \phpbb\install\helper\database(new \phpbb\filesystem\filesystem(), $phpbb_root_path);
+			$sql = $db_helper->remove_comments($queries);
+			$sql = $db_helper->split_sql_file($sql, $this->dbms['DELIM']);
 
 			foreach ($sql as $query)
 			{
@@ -365,11 +366,11 @@ class phpbb_database_test_connection_manager
 		{
 			global $phpbb_root_path, $phpEx, $table_prefix;
 
-			$finder = new \phpbb\finder(new \phpbb\filesystem(), $phpbb_root_path, null, $phpEx);
+			$finder = new \phpbb\finder($phpbb_root_path, null, $phpEx);
 			$classes = $finder->core_path('phpbb/db/migration/data/')
 				->get_classes();
 
-			$db = new \phpbb\db\driver\sqlite();
+			$db = new \phpbb\db\driver\sqlite3();
 			$factory = new \phpbb\db\tools\factory();
 			$db_tools = $factory->get($db, true);
 
@@ -444,11 +445,6 @@ class phpbb_database_test_connection_manager
 				'SCHEMA'		=> 'postgres',
 				'DELIM'			=> ';',
 				'PDO'			=> 'pgsql',
-			),
-			'phpbb\db\driver\sqlite'		=> array(
-				'SCHEMA'		=> 'sqlite',
-				'DELIM'			=> ';',
-				'PDO'			=> 'sqlite2',
 			),
 			'phpbb\db\driver\sqlite3'		=> array(
 				'SCHEMA'		=> 'sqlite',
@@ -625,7 +621,7 @@ class phpbb_database_test_connection_manager
 				}
 
 				// Combine all of the SETVALs into one query
-				if (sizeof($setval_queries))
+				if (count($setval_queries))
 				{
 					$queries[] = 'SELECT ' . implode(', ', $setval_queries);
 				}

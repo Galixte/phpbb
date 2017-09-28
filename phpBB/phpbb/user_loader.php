@@ -75,7 +75,7 @@ class user_loader
 		// Do not load users we already have in $this->users
 		$user_ids = array_diff($user_ids, array_keys($this->users));
 
-		if (sizeof($user_ids))
+		if (count($user_ids))
 		{
 			$sql = 'SELECT *
 				FROM ' . $this->users_table . '
@@ -179,9 +179,10 @@ class user_loader
 	* @param bool $query Should we query the database if this user has not yet been loaded?
 	* 						Typically this should be left as false and you should make sure
 	* 						you load users ahead of time with load_users()
+	* @param bool @lazy If true, will be lazy loaded (requires JS)
 	* @return string
 	*/
-	public function get_avatar($user_id, $query = false)
+	public function get_avatar($user_id, $query = false, $lazy = false)
 	{
 		if (!($user = $this->get_user($user_id, $query)))
 		{
@@ -195,7 +196,7 @@ class user_loader
 			'avatar_height'	=> $user['user_avatar_height'],
 		);
 
-		return phpbb_get_avatar($row, 'USER_AVATAR');
+		return phpbb_get_avatar($row, 'USER_AVATAR', false, $lazy);
 	}
 
 	/**

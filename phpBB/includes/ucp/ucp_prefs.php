@@ -29,7 +29,7 @@ class ucp_prefs
 
 	function main($id, $mode)
 	{
-		global $config, $db, $user, $auth, $template, $phpbb_dispatcher, $phpbb_root_path, $phpEx, $request;
+		global $config, $db, $user, $auth, $template, $phpbb_dispatcher, $request;
 
 		$submit = (isset($_POST['submit'])) ? true : false;
 		$error = $data = array();
@@ -69,7 +69,7 @@ class ucp_prefs
 				* @var	array	data		Array with current ucp options data
 				* @var	array	error		Array with list of errors
 				* @since 3.1.0-a1
-				* @changed 3.1.4-rc1 Added error variable to the event
+				* @changed 3.1.4-RC1 Added error variable to the event
 				*/
 				$vars = array('submit', 'data', 'error');
 				extract($phpbb_dispatcher->trigger_event('core.ucp_prefs_personal_data', compact($vars)));
@@ -86,7 +86,7 @@ class ucp_prefs
 					}
 
 					$error = array_merge(validate_data($data, array(
-						'dateformat'	=> array('string', false, 1, 30),
+						'dateformat'	=> array('string', false, 1, 64),
 						'lang'			=> array('language_iso_name'),
 						'tz'			=> array('timezone'),
 					)), $error);
@@ -96,7 +96,7 @@ class ucp_prefs
 						$error[] = 'FORM_INVALID';
 					}
 
-					if (!sizeof($error))
+					if (!count($error))
 					{
 						$sql_ary = array(
 							'user_allow_pm'			=> $data['allowpm'],
@@ -188,7 +188,7 @@ class ucp_prefs
 				$db->sql_freeresult($result);
 
 				$template->assign_vars(array(
-					'ERROR'				=> (sizeof($error)) ? implode('<br />', $error) : '',
+					'ERROR'				=> (count($error)) ? implode('<br />', $error) : '',
 
 					'S_NOTIFY_EMAIL'	=> ($data['notifymethod'] == NOTIFY_EMAIL) ? true : false,
 					'S_NOTIFY_IM'		=> ($data['notifymethod'] == NOTIFY_IM) ? true : false,
@@ -277,7 +277,7 @@ class ucp_prefs
 						$error[] = 'FORM_INVALID';
 					}
 
-					if (!sizeof($error))
+					if (!count($error))
 					{
 						$user->optionset('viewimg', $data['images']);
 						$user->optionset('viewflash', $data['flash']);
@@ -368,8 +368,51 @@ class ucp_prefs
 					${'s_sort_' . $sort_option . '_dir'} .= '</select>';
 				}
 
+				/**
+				* Run code before view form is displayed
+				*
+				* @event core.ucp_prefs_view_after
+				* @var	bool	submit				Do we display the form only
+				*									or did the user press submit
+				* @var	array	data				Array with current ucp options data
+				* @var	array	sort_dir_text		Array with sort dir language strings
+				* @var	array	limit_topic_days	Topic ordering options
+				* @var	array	sort_by_topic_text	Topic ordering language strings
+				* @var	array	sort_by_topic_sql	Topic ordering sql
+				* @var	array	limit_post_days		Post ordering options
+				* @var	array	sort_by_post_text	Post ordering language strings
+				* @var	array	sort_by_post_sql	Post ordering sql
+				* @var	array	_options			Sort options
+				* @var	string	s_limit_topic_days	Sort limit topic by days select box
+				* @var	string	s_sort_topic_key	Sort topic key select box
+				* @var	string	s_sort_topic_dir	Sort topic dir select box
+				* @var	string	s_limit_post_days	Sort limit post by days select box
+				* @var	string	s_sort_post_key		Sort post key select box
+				* @var	string	s_sort_post_dir		Sort post dir select box
+				* @since 3.1.8-RC1
+				*/
+				$vars = array(
+					'submit',
+					'data',
+					'sort_dir_text',
+					'limit_topic_days',
+					'sort_by_topic_text',
+					'sort_by_topic_sql',
+					'limit_post_days',
+					'sort_by_post_text',
+					'sort_by_post_sql',
+					'_options',
+					's_limit_topic_days',
+					's_sort_topic_key',
+					's_sort_topic_dir',
+					's_limit_post_days',
+					's_sort_post_key',
+					's_sort_post_dir',
+				);
+				extract($phpbb_dispatcher->trigger_event('core.ucp_prefs_view_after', compact($vars)));
+
 				$template->assign_vars(array(
-					'ERROR'				=> (sizeof($error)) ? implode('<br />', $error) : '',
+					'ERROR'				=> (count($error)) ? implode('<br />', $error) : '',
 
 					'S_IMAGES'			=> $data['images'],
 					'S_FLASH'			=> $data['flash'],

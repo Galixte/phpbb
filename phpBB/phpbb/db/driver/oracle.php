@@ -84,8 +84,6 @@ class oracle extends \phpbb\db\driver\driver
 		* but I assume its because the Oracle extension provides a direct method to access it
 		* without a query.
 		*/
-
-		$use_cache = false;
 /*
 		global $cache;
 
@@ -138,7 +136,7 @@ class oracle extends \phpbb\db\driver\driver
 	*/
 	function _rewrite_col_compare($args)
 	{
-		if (sizeof($args) == 4)
+		if (count($args) == 4)
 		{
 			if ($args[2] == '=')
 			{
@@ -292,7 +290,7 @@ class oracle extends \phpbb\db\driver\driver
 						and/or need the db restore script, uncomment this.
 
 
-							if (sizeof($cols) !== sizeof($vals))
+							if (count($cols) !== count($vals))
 							{
 								// Try to replace some common data we know is from our restore script or from other sources
 								$regs[3] = str_replace("'||chr(47)||'", '/', $regs[3]);
@@ -334,7 +332,7 @@ class oracle extends \phpbb\db\driver\driver
 								if ($string)
 								{
 									// New value if cols != value
-									$vals[(sizeof($cols) !== sizeof($vals)) ? $i : $i - 1] .= $string;
+									$vals[(count($cols) !== count($vals)) ? $i : $i - 1] .= $string;
 								}
 
 								$vals = array(0 => $vals);

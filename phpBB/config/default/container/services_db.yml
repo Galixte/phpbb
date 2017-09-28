@@ -2,12 +2,10 @@ services:
     dbal.conn:
         class: phpbb\db\driver\factory
         arguments:
-            - @service_container
+            - '@service_container'
 
     dbal.conn.driver:
-        class: %dbal.driver.class%
-        calls:
-            - [sql_connect, [%dbal.dbhost%, %dbal.dbuser%, %dbal.dbpasswd%, %dbal.dbname%, %dbal.dbport%, false, %dbal.new_link%]]
+        synthetic: true
 
 # ----- DB Tools -----
     dbal.tools.factory:
@@ -15,69 +13,59 @@ services:
 
     dbal.tools:
         class: phpbb\db\tools\tools_interface
-        factory: ["@dbal.tools.factory", get]
+        factory: ['@dbal.tools.factory', get]
         arguments:
-            - @dbal.conn.driver
+            - '@dbal.conn.driver'
 
-# ----- Migrator -----
-    migrator:
-        class: phpbb\db\migrator
+# ----- DB Extractor -----
+    dbal.extractor.factory:
+        class: phpbb\db\extractor\factory
         arguments:
-            - @service_container
-            - @config
-            - @dbal.conn
-            - @dbal.tools
-            - %tables.migrations%
-            - %core.root_path%
-            - %core.php_ext%
-            - %core.table_prefix%
-            - @migrator.tool_collection
-            - @migrator.helper
+            - '@dbal.conn.driver'
+            - '@service_container'
 
-    migrator.helper:
-        class: phpbb\db\migration\helper
+    dbal.extractor:
+        class: phpbb\db\extractor\extractor_interface
+        factory: ['@dbal.extractor.factory', get]
 
-# ----- Migrator's tools -----
-    migrator.tool_collection:
-        class: phpbb\di\service_collection
+# ----- DB Extractors for different drivers -----
+# Service MUST NOT be shared for all the handlers to work correctly.
+    dbal.extractor.extractors.mssql_extractor:
+        class: phpbb\db\extractor\mssql_extractor
+        shared: false
         arguments:
-            - @service_container
-        tags:
-            - { name: service_collection, tag: migrator.tool }
+            - '%core.root_path%'
+            - '@request'
+            - '@dbal.conn.driver'
 
-    migrator.tool.config:
-        class: phpbb\db\migration\tool\config
+    dbal.extractor.extractors.mysql_extractor:
+        class: phpbb\db\extractor\mysql_extractor
+        shared: false
         arguments:
-            - @config
-        tags:
-            - { name: migrator.tool }
+            - '%core.root_path%'
+            - '@request'
+            - '@dbal.conn.driver'
 
-    migrator.tool.config_text:
-        class: phpbb\db\migration\tool\config_text
+    dbal.extractor.extractors.oracle_extractor:
+        class: phpbb\db\extractor\oracle_extractor
+        shared: false
         arguments:
-            - @config_text
-        tags:
-            - { name: migrator.tool }
+            - '%core.root_path%'
+            - '@request'
+            - '@dbal.conn.driver'
 
-    migrator.tool.module:
-        class: phpbb\db\migration\tool\module
+    dbal.extractor.extractors.postgres_extractor:
+        class: phpbb\db\extractor\postgres_extractor
+        shared: false
         arguments:
-            - @dbal.conn
-            - @cache
-            - @user
-            - %core.root_path%
-            - %core.php_ext%
-            - %tables.modules%
-        tags:
-            - { name: migrator.tool }
+            - '%core.root_path%'
+            - '@request'
+            - '@dbal.conn.driver'
 
-    migrator.tool.permission:
-        class: phpbb\db\migration\tool\permission
+    dbal.extractor.extractors.sqlite3_extractor:
+        class: phpbb\db\extractor\sqlite3_extractor
+        shared: false
         arguments:
-            - @dbal.conn
-            - @cache
-            - @auth
-            - %core.root_path%
-            - %core.php_ext%
-        tags:
-            - { name: migrator.tool }
+            - '%core.root_path%'
+            - '@request'
+            - '@dbal.conn.driver'

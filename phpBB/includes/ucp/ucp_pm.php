@@ -92,7 +92,7 @@ class ucp_pm
 
 				$user_folders = get_folder($user->data['user_id']);
 
-				if (!$auth->acl_get('u_sendpm'))
+				if ($action != 'delete' && !$auth->acl_get('u_sendpm'))
 				{
 					// trigger_error('NO_AUTH_SEND_MESSAGE');
 					$template->assign_vars(array(
@@ -166,6 +166,7 @@ class ucp_pm
 
 				if (!$auth->acl_get('u_readpm'))
 				{
+					send_status_line(403, 'Forbidden');
 					trigger_error('NO_AUTH_READ_MESSAGE');
 				}
 

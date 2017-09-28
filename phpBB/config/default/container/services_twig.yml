@@ -1,21 +1,27 @@
 parameters:
-    core.template.cache_path: %core.root_path%cache/%core.environment%/twig/
+    core.template.cache_path: '%core.cache_dir%twig/'
 
 services:
     template.twig.environment:
         class: phpbb\template\twig\environment
         arguments:
-            - @config
-            - @path_helper
-            - @service_container
-            - %core.template.cache_path%
-            - @ext.manager
-            - @template.twig.loader
+            - '@config'
+            - '@filesystem'
+            - '@path_helper'
+            - '%core.template.cache_path%'
+            - '@ext.manager'
+            - '@template.twig.loader'
+            - '@dispatcher'
+            - []
+        calls:
+            - [setLexer, ['@template.twig.lexer']]
+            - [addGlobal, ['config', '@config']]
 
     template.twig.lexer:
         class: phpbb\template\twig\lexer
+        lazy: true
         arguments:
-            - @template.twig.environment
+            - '@template.twig.environment'
 
     template.twig.loader:
         class: phpbb\template\twig\loader
@@ -23,24 +29,39 @@ services:
     template.twig.extensions.collection:
         class: phpbb\di\service_collection
         arguments:
-            - @service_container
+            - '@service_container'
         tags:
             - { name: service_collection, tag: twig.extension }
 
     template.twig.extensions.phpbb:
         class: phpbb\template\twig\extension
         arguments:
-            - @template_context
-            - @user
+            - '@template_context'
+            - '@language'
         tags:
             - { name: twig.extension }
 
     template.twig.extensions.routing:
-        class: Symfony\Bridge\Twig\Extension\RoutingExtension
+        class: phpbb\template\twig\extension\routing
         arguments:
-            - @router
+            - '@routing.helper'
         tags:
             - { name: twig.extension }
 
     template.twig.extensions.debug:
         class: Twig_Extension_Debug
+
+    template:
+        class: phpbb\template\twig\twig
+        arguments:
+            - '@path_helper'
+            - '@config'
+            - '@template_context'
+            - '@template.twig.environment'
+            - '%core.template.cache_path%'
+            - '@user'
+            - '@template.twig.extensions.collection'
+            - '@ext.manager'
+
+    template_context:
+        class: phpbb\template\context

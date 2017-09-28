@@ -1,106 +1,121 @@
 services:
+    phpbb.feed.controller:
+        class: phpbb\feed\controller\feed
+        arguments:
+            - '@template.twig.environment'
+            - '@symfony_request'
+            - '@controller.helper'
+            - '@config'
+            - '@dbal.conn'
+            - '@service_container'
+            - '@feed.helper'
+            - '@user'
+            - '@auth'
+            - '@dispatcher'
+            - '%core.php_ext%'
+
     feed.helper:
         class: phpbb\feed\helper
         arguments:
-            - @config
-            - @user
-            - %core.root_path%
-            - %core.php_ext%
-
-    feed.factory:
-        class: phpbb\feed\factory
-        arguments:
-            - @service_container
-            - @config
-            - @dbal.conn
+            - '@config'
+            - '@user'
+            - '%core.root_path%'
+            - '%core.php_ext%'
 
     feed.forum:
         class: phpbb\feed\forum
-        scope: prototype
+        shared: false
         arguments:
-            - @feed.helper
-            - @config
-            - @dbal.conn
-            - @cache.driver
-            - @user
-            - @auth
-            - @content.visibility
-            - %core.php_ext%
+            - '@feed.helper'
+            - '@config'
+            - '@dbal.conn'
+            - '@cache.driver'
+            - '@user'
+            - '@auth'
+            - '@content.visibility'
+            - '@dispatcher'
+            - '%core.php_ext%'
 
     feed.forums:
         class: phpbb\feed\forums
-        scope: prototype
+        shared: false
         arguments:
-            - @feed.helper
-            - @config
-            - @dbal.conn
-            - @cache.driver
-            - @user
-            - @auth
-            - @content.visibility
-            - %core.php_ext%
+            - '@feed.helper'
+            - '@config'
+            - '@dbal.conn'
+            - '@cache.driver'
+            - '@user'
+            - '@auth'
+            - '@content.visibility'
+            - '@dispatcher'
+            - '%core.php_ext%'
 
     feed.news:
         class: phpbb\feed\news
-        scope: prototype
+        shared: false
         arguments:
-            - @feed.helper
-            - @config
-            - @dbal.conn
-            - @cache.driver
-            - @user
-            - @auth
-            - @content.visibility
-            - %core.php_ext%
+            - '@feed.helper'
+            - '@config'
+            - '@dbal.conn'
+            - '@cache.driver'
+            - '@user'
+            - '@auth'
+            - '@content.visibility'
+            - '@dispatcher'
+            - '%core.php_ext%'
 
     feed.overall:
         class: phpbb\feed\overall
-        scope: prototype
+        shared: false
         arguments:
-            - @feed.helper
-            - @config
-            - @dbal.conn
-            - @cache.driver
-            - @user
-            - @auth
-            - @content.visibility
-            - %core.php_ext%
+            - '@feed.helper'
+            - '@config'
+            - '@dbal.conn'
+            - '@cache.driver'
+            - '@user'
+            - '@auth'
+            - '@content.visibility'
+            - '@dispatcher'
+            - '%core.php_ext%'
 
     feed.topic:
         class: phpbb\feed\topic
-        scope: prototype
+        shared: false
         arguments:
-            - @feed.helper
-            - @config
-            - @dbal.conn
-            - @cache.driver
-            - @user
-            - @auth
-            - @content.visibility
-            - %core.php_ext%
+            - '@feed.helper'
+            - '@config'
+            - '@dbal.conn'
+            - '@cache.driver'
+            - '@user'
+            - '@auth'
+            - '@content.visibility'
+            - '@dispatcher'
+            - '%core.php_ext%'
 
     feed.topics:
         class: phpbb\feed\topics
-        scope: prototype
+        shared: false
         arguments:
-            - @feed.helper
-            - @config
-            - @dbal.conn
-            - @cache.driver
-            - @user
-            - @auth
-            - @content.visibility
-            - %core.php_ext%
+            - '@feed.helper'
+            - '@config'
+            - '@dbal.conn'
+            - '@cache.driver'
+            - '@user'
+            - '@auth'
+            - '@content.visibility'
+            - '@dispatcher'
+            - '%core.php_ext%'
 
     feed.topics_active:
         class: phpbb\feed\topics_active
-        scope: prototype
+        shared: false
         arguments:
-            - @feed.helper
-            - @config
-            - @dbal.conn
-            - @cache.driver
-            - @user
-            - @auth
-            - @content.visibility
-            - %core.php_ext%
+            - '@feed.helper'
+            - '@config'
+            - '@dbal.conn'
+            - '@cache.driver'
+            - '@user'
+            - '@auth'
+            - '@content.visibility'
+            - '@dispatcher'
+            - '%core.php_ext%'

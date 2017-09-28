@@ -25,10 +25,14 @@ class acp_prune
 
 	function main($id, $mode)
 	{
-		global $user, $phpEx, $phpbb_admin_path, $phpbb_root_path;
+		global $user, $phpEx, $phpbb_root_path;
 
 		$user->add_lang('acp/prune');
-		include_once($phpbb_root_path . 'includes/functions_user.' . $phpEx);
+
+		if (!function_exists('user_active_flip'))
+		{
+			include($phpbb_root_path . 'includes/functions_user.' . $phpEx);
+		}
 
 		switch ($mode)
 		{
@@ -51,8 +55,7 @@ class acp_prune
 	*/
 	function prune_forums($id, $mode)
 	{
-		global $db, $user, $auth, $template, $cache, $phpbb_log, $request;
-		global $config, $phpbb_root_path, $phpbb_admin_path, $phpEx;
+		global $db, $user, $auth, $template, $phpbb_log, $request;
 
 		$all_forums = $request->variable('all_forums', 0);
 		$forum_id = $request->variable('f', array(0));
@@ -94,7 +97,7 @@ class acp_prune
 					'S_PRUNED'		=> true)
 				);
 
-				$sql_forum = (sizeof($forum_id)) ? ' AND ' . $db->sql_in_set('forum_id', $forum_id) : '';
+				$sql_forum = (count($forum_id)) ? ' AND ' . $db->sql_in_set('forum_id', $forum_id) : '';
 
 				// Get a list of forum's or the data for the forum that we are pruning.
 				$sql = 'SELECT forum_id, forum_name
@@ -180,7 +183,7 @@ class acp_prune
 
 		// If they haven't selected a forum for pruning yet then
 		// display a select box to use for pruning.
-		if (!sizeof($forum_id))
+		if (!count($forum_id))
 		{
 			$template->assign_vars(array(
 				'U_ACTION'			=> $this->u_action,
@@ -212,7 +215,7 @@ class acp_prune
 
 			$db->sql_freeresult($result);
 
-			$l_selected_forums = (sizeof($forum_id) == 1) ? 'SELECTED_FORUM' : 'SELECTED_FORUMS';
+			$l_selected_forums = (count($forum_id) == 1) ? 'SELECTED_FORUM' : 'SELECTED_FORUMS';
 
 			$template->assign_vars(array(
 				'L_SELECTED_FORUMS'		=> $user->lang[$l_selected_forums],
@@ -229,8 +232,11 @@ class acp_prune
 	*/
 	function prune_users($id, $mode)
 	{
-		global $db, $user, $auth, $template, $cache, $phpbb_log, $request;
-		global $config, $phpbb_root_path, $phpbb_admin_path, $phpEx;
+		global $db, $user, $auth, $template, $phpbb_log, $request;
+		global $phpbb_root_path, $phpbb_admin_path, $phpEx, $phpbb_container;
+
+		/** @var \phpbb\group\helper $group_helper */
+		$group_helper = $phpbb_container->get('group_helper');
 
 		$user->add_lang('memberlist');
 
@@ -246,7 +252,7 @@ class acp_prune
 				$user_ids = $usernames = array();
 
 				$this->get_prune_users($user_ids, $usernames);
-				if (sizeof($user_ids))
+				if (count($user_ids))
 				{
 					if ($action == 'deactivate')
 					{
@@ -285,7 +291,7 @@ class acp_prune
 				$user_ids = $usernames = array();
 				$this->get_prune_users($user_ids, $usernames);
 
-				if (!sizeof($user_ids))
+				if (!count($user_ids))
 				{
 					trigger_error($user->lang['USER_PRUNE_FAILURE'] . adm_back_link($this->u_action), E_USER_WARNING);
 				}
@@ -342,7 +348,7 @@ class acp_prune
 		$s_group_list = '';
 		while ($row = $db->sql_fetchrow($result))
 		{
-			$s_group_list .= '<option value="' . $row['group_id'] . '">' . $row['group_name'] . '</option>';
+			$s_group_list .= '<option value="' . $row['group_id'] . '">' . $group_helper->get_name($row['group_name']) . '</option>';
 		}
 		$db->sql_freeresult($result);
 
@@ -428,13 +434,12 @@ class acp_prune
 			}
 			// implicit else when both arrays are empty do nothing
 
-			if ((sizeof($active) && sizeof($active) != 3) || (sizeof($joined_before) && sizeof($joined_before) != 3) || (sizeof($joined_after) && sizeof($joined_after) != 3))
+			if ((count($active) && count($active) != 3) || (count($joined_before) && count($joined_before) != 3) || (count($joined_after) && count($joined_after) != 3))
 			{
 				trigger_error($user->lang['WRONG_ACTIVE_JOINED_DATE'] . adm_back_link($this->u_action), E_USER_WARNING);
 			}
 
 			$key_match = array('lt' => '<', 'gt' => '>', 'eq' => '=');
-			$sort_by_types = array('username', 'user_email', 'user_posts', 'user_regdate', 'user_lastvisit');
 
 			$where_sql = '';
 			$where_sql .= ($username) ? ' AND username_clean ' . $db->sql_like_expression(str_replace('*', $db->get_any_char(), utf8_clean_string($username))) : '';
@@ -443,15 +448,15 @@ class acp_prune
 			$where_sql .= ($count !== false) ? " AND user_posts " . $key_match[$count_select] . ' ' . (int) $count . ' ' : '';
 
 			// First handle pruning of users who never logged in, last active date is 0000-00-00
-			if (sizeof($active) && (int) $active[0] == 0 && (int) $active[1] == 0 && (int) $active[2] == 0)
+			if (count($active) && (int) $active[0] == 0 && (int) $active[1] == 0 && (int) $active[2] == 0)
 			{
 				$where_sql .= ' AND user_lastvisit = 0';
 			}
-			else if (sizeof($active) && $active_select != 'lt')
+			else if (count($active) && $active_select != 'lt')
 			{
 				$where_sql .= ' AND user_lastvisit ' . $key_match[$active_select] . ' ' . gmmktime(0, 0, 0, (int) $active[1], (int) $active[2], (int) $active[0]);
 			}
-			else if (sizeof($active))
+			else if (count($active))
 			{
 				$where_sql .= ' AND (user_lastvisit > 0 AND user_lastvisit < ' . gmmktime(0, 0, 0, (int) $active[1], (int) $active[2], (int) $active[0]) . ')';
 			}
@@ -507,9 +512,9 @@ class acp_prune
 				WHERE ug.group_id = ' . (int) $group_id . '
 					AND ug.user_id <> ' . ANONYMOUS . '
 					AND u.user_type <> ' . USER_FOUNDER . '
-					AND ug.user_pending = 0 ' .
-					((!empty($user_ids)) ? ' AND ' . $db->sql_in_set('ug.user_id', $user_ids) : '') . '
-					AND u.user_id = ug.user_id';
+					AND ug.user_pending = 0
+					AND u.user_id = ug.user_id
+					' . (!empty($user_ids) ? ' AND ' . $db->sql_in_set('ug.user_id', $user_ids) : '');
 			$result = $db->sql_query($sql);
 
 			// we're performing an intersection operation, so all the relevant users
@@ -533,10 +538,10 @@ class acp_prune
 			$sql = 'SELECT u.user_id, u.username, COUNT(p.post_id) AS queue_posts
 				FROM ' . POSTS_TABLE . ' p, ' . USERS_TABLE . ' u
 				WHERE u.user_id <> ' . ANONYMOUS . '
-					AND u.user_type <> ' . USER_FOUNDER .
-					((!empty($user_ids)) ? ' AND ' . $db->sql_in_set('p.poster_id', $user_ids) : '') . '
+					AND u.user_type <> ' . USER_FOUNDER . '
 					AND ' . $db->sql_in_set('p.post_visibility', array(ITEM_UNAPPROVED, ITEM_REAPPROVE)) . '
 					AND u.user_id = p.poster_id
+					' . (!empty($user_ids) ? ' AND ' . $db->sql_in_set('p.poster_id', $user_ids) : '') . '
 				GROUP BY p.poster_id
 				HAVING queue_posts ' . $key_match[$queue_select] . ' ' . $posts_on_queue;
 			$result = $db->sql_query($sql);

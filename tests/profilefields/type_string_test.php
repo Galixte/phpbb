@@ -11,10 +11,6 @@
 *
 */
 
-require_once dirname(__FILE__) . '/../../phpBB/includes/functions.php';
-require_once dirname(__FILE__) . '/../../phpBB/includes/functions_content.php';
-require_once dirname(__FILE__) . '/../../phpBB/includes/utf/utf_tools.php';
-
 class phpbb_profilefield_type_string_test extends phpbb_test_case
 {
 	protected $cp;
@@ -28,16 +24,19 @@ class phpbb_profilefield_type_string_test extends phpbb_test_case
 	*/
 	public function setUp()
 	{
-		global $request, $user, $cache;
+		global $request, $user, $cache, $phpbb_root_path, $phpEx;
 
-		$user = $this->getMock('\phpbb\user', array(), array('\phpbb\datetime'));
+		$user = $this->createMock('\phpbb\user', array(), array(
+			new \phpbb\language\language(new \phpbb\language\language_file_loader($phpbb_root_path, $phpEx)),
+			'\phpbb\datetime'
+		));
 		$cache = new phpbb_mock_cache;
 		$user->expects($this->any())
 			->method('lang')
 			->will($this->returnCallback(array($this, 'return_callback_implode')));
 
-		$request = $this->getMock('\phpbb\request\request');
-		$template = $this->getMock('\phpbb\template\template');
+		$request = $this->createMock('\phpbb\request\request');
+		$template = $this->createMock('\phpbb\template\template');
 
 		$this->cp = new \phpbb\profilefields\type\type_string(
 			$request,

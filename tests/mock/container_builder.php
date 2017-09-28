@@ -23,11 +23,11 @@ class phpbb_mock_container_builder implements ContainerInterface
 	*
 	* @param string $id      The service identifier
 	* @param object $service The service instance
-	* @param string $scope   The scope of the service
+	* @param bool $shared Whether service is shared
 	*
 	* @api
 	*/
-	public function set($id, $service, $scope = self::SCOPE_CONTAINER)
+	public function set($id, $service, $shared = false)
 	{
 		$this->services[$id] = $service;
 	}
@@ -52,7 +52,15 @@ class phpbb_mock_container_builder implements ContainerInterface
 	{
 		if ($this->has($id))
 		{
-			return $this->services[$id];
+			$service = $this->services[$id];
+			if (is_array($service) && is_callable($service[0]))
+			{
+				return call_user_func_array($service[0], $service[1]);
+			}
+			else
+			{
+				return $service;
+			}
 		}
 
 		throw new Exception('Could not find service: ' . $id);
@@ -179,5 +187,15 @@ class phpbb_mock_container_builder implements ContainerInterface
 	*/
 	public function isScopeActive($name)
 	{
+	}
+
+	public function isFrozen()
+	{
+		return false;
+	}
+
+	public function initialized($id)
+	{
+		return true;
 	}
 }

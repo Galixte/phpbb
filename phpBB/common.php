@@ -12,7 +12,7 @@
 */
 
 /**
-* Minimum Requirement: PHP 5.3.9
+* Minimum Requirement: PHP 5.4.0
 */
 
 if (!defined('IN_PHPBB'))
@@ -43,7 +43,13 @@ if (!defined('PHPBB_INSTALLED'))
 	// available as used by the redirect function
 	$server_name = (!empty($_SERVER['HTTP_HOST'])) ? strtolower($_SERVER['HTTP_HOST']) : ((!empty($_SERVER['SERVER_NAME'])) ? $_SERVER['SERVER_NAME'] : getenv('SERVER_NAME'));
 	$server_port = (!empty($_SERVER['SERVER_PORT'])) ? (int) $_SERVER['SERVER_PORT'] : (int) getenv('SERVER_PORT');
-	$secure = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] == 'on') ? 1 : 0;
+	$secure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 1 : 0;
+
+	if (!empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https')
+	{
+		$secure = 1;
+		$server_port = 443;
+	}
 
 	$script_name = (!empty($_SERVER['PHP_SELF'])) ? $_SERVER['PHP_SELF'] : getenv('PHP_SELF');
 	if (!$script_name)
@@ -52,15 +58,14 @@ if (!defined('PHPBB_INSTALLED'))
 	}
 
 	// $phpbb_root_path accounts for redirects from e.g. /adm
-	$script_path = trim(dirname($script_name)) . '/' . $phpbb_root_path . 'install/index.' . $phpEx;
+	$script_path = trim(dirname($script_name)) . '/' . $phpbb_root_path . 'install/app.' . $phpEx;
 	// Replace any number of consecutive backslashes and/or slashes with a single slash
 	// (could happen on some proxy setups and/or Windows servers)
 	$script_path = preg_replace('#[\\\\/]{2,}#', '/', $script_path);
 
 	// Eliminate . and .. from the path
 	require($phpbb_root_path . 'phpbb/filesystem.' . $phpEx);
-	$phpbb_filesystem = new phpbb\filesystem();
-	$script_path = $phpbb_filesystem->clean_path($script_path);
+	$script_path = \phpbb\filesystem\helper::clean_path($script_path);
 
 	$url = (($secure) ? 'https://' : 'http://') . $server_name;
 
@@ -90,32 +95,50 @@ include($phpbb_root_path . 'includes/functions_compatibility.' . $phpEx);
 require($phpbb_root_path . 'includes/constants.' . $phpEx);
 require($phpbb_root_path . 'includes/utf/utf_tools.' . $phpEx);
 
-// Set PHP error handler to ours
-set_error_handler(defined('PHPBB_MSG_HANDLER') ? PHPBB_MSG_HANDLER : 'msg_handler');
+if (PHPBB_ENVIRONMENT === 'development')
+{
+	\phpbb\debug\debug::enable();
+}
+else
+{
+	set_error_handler(defined('PHPBB_MSG_HANDLER') ? PHPBB_MSG_HANDLER : 'msg_handler');
+}
 
 $phpbb_class_loader_ext = new \phpbb\class_loader('\\', "{$phpbb_root_path}ext/", $phpEx);
 $phpbb_class_loader_ext->register();
 
-phpbb_load_extensions_autoloaders($phpbb_root_path);
-
 // Set up container
 try
 {
-	$phpbb_container_builder = new \phpbb\di\container_builder($phpbb_config_php_file, $phpbb_root_path, $phpEx);
-	$phpbb_container = $phpbb_container_builder->get_container();
+	$phpbb_container_builder = new \phpbb\di\container_builder($phpbb_root_path, $phpEx);
+	$phpbb_container = $phpbb_container_builder->with_config($phpbb_config_php_file)->get_container();
 }
 catch (InvalidArgumentException $e)
 {
-	trigger_error(
-		'The requested environment ' . PHPBB_ENVIRONMENT . ' is not available.',
-		E_USER_ERROR
-	);
+	if (PHPBB_ENVIRONMENT !== 'development')
+	{
+		trigger_error(
+			'The requested environment ' . PHPBB_ENVIRONMENT . ' is not available.',
+			E_USER_ERROR
+		);
+	}
+	else
+	{
+		throw $e;
+	}
 }
 
 $phpbb_class_loader->set_cache($phpbb_container->get('cache.driver'));
 $phpbb_class_loader_ext->set_cache($phpbb_container->get('cache.driver'));
 
 require($phpbb_root_path . 'includes/compatibility_globals.' . $phpEx);
+
+register_compatibility_globals();
+
+if (@is_file($phpbb_root_path . $config['exts_composer_vendor_dir'] . '/autoload.php'))
+{
+	require_once($phpbb_root_path . $config['exts_composer_vendor_dir'] . '/autoload.php');
+}
 
 // Add own hook handler
 require($phpbb_root_path . 'includes/hooks/index.' . $phpEx);

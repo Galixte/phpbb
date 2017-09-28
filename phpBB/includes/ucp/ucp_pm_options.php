@@ -24,7 +24,7 @@ if (!defined('IN_PHPBB'))
 */
 function message_options($id, $mode, $global_privmsgs_rules, $global_rule_conditions)
 {
-	global $phpbb_root_path, $phpEx, $user, $template, $auth, $config, $db, $request;
+	global $phpbb_root_path, $phpEx, $user, $template, $config, $db, $request;
 
 	$redirect_url = append_sid("{$phpbb_root_path}ucp.$phpEx", "i=pm&amp;mode=options");
 
@@ -80,7 +80,6 @@ function message_options($id, $mode, $global_privmsgs_rules, $global_rule_condit
 		if (check_form_key('ucp_pm_options'))
 		{
 			$folder_name = $request->variable('foldername', '', true);
-			$msg = '';
 
 			if ($folder_name)
 			{
@@ -507,7 +506,9 @@ function message_options($id, $mode, $global_privmsgs_rules, $global_rule_condit
 	$rule_lang = $action_lang = $check_lang = array();
 
 	// Build all three language arrays
-	preg_replace('#^((RULE|ACTION|CHECK)_([A-Z0-9_]+))$#e', "\${strtolower('\\2') . '_lang'}[constant('\\1')] = \$user->lang['PM_\\2']['\\3']", array_keys(get_defined_constants()));
+	preg_replace_callback('#^((RULE|ACTION|CHECK)_([A-Z0-9_]+))$#', function ($match) use(&$rule_lang, &$action_lang, &$check_lang, $user) {
+		${strtolower($match[2]) . '_lang'}[constant($match[1])] = $user->lang['PM_' . $match[2]][$match[3]];
+	}, array_keys(get_defined_constants()));
 
 	/*
 		Rule Ordering:
@@ -520,7 +521,7 @@ function message_options($id, $mode, $global_privmsgs_rules, $global_rule_condit
 	$action_option	= $request->variable('action_option', '');
 	$back = (isset($_REQUEST['back'])) ? $request->variable('back', array('' => 0)) : array();
 
-	if (sizeof($back))
+	if (count($back))
 	{
 		if ($action_option)
 		{
@@ -609,7 +610,7 @@ function define_check_option($hardcoded, $check_option, $check_lang)
 */
 function define_action_option($hardcoded, $action_option, $action_lang, $folder)
 {
-	global $db, $template, $user;
+	global $template;
 
 	$l_action = $s_action_options = '';
 	if ($hardcoded)
@@ -698,7 +699,10 @@ function define_rule_option($hardcoded, $rule_option, $rule_lang, $check_ary)
 */
 function define_cond_option($hardcoded, $cond_option, $rule_option, $global_rule_conditions)
 {
-	global $db, $template, $auth, $user, $request;
+	global $db, $template, $auth, $user, $request, $phpbb_container;
+
+	/** @var \phpbb\group\helper $group_helper */
+	$group_helper = $phpbb_container->get('group_helper');
 
 	$template->assign_vars(array(
 		'S_COND_DEFINED'	=> true,
@@ -717,7 +721,6 @@ function define_cond_option($hardcoded, $cond_option, $rule_option, $global_rule
 
 	// Define Condition
 	$condition = $global_rule_conditions[$rule_option];
-	$current_value = '';
 
 	switch ($condition)
 	{
@@ -810,13 +813,13 @@ function define_cond_option($hardcoded, $cond_option, $rule_option, $global_rule
 			{
 				if ($rule_group_id && ($row['group_id'] == $rule_group_id))
 				{
-					$rule_string = (($row['group_type'] == GROUP_SPECIAL) ? $user->lang['G_' . $row['group_name']] : $row['group_name']);
+					$rule_string = $group_helper->get_name($row['group_name']);
 				}
 
 				$s_class	= ($row['group_type'] == GROUP_SPECIAL) ? ' class="sep"' : '';
 				$s_selected	= ($row['group_id'] == $rule_group_id) ? ' selected="selected"' : '';
 
-				$s_group_options .= '<option value="' . $row['group_id'] . '"' . $s_class . $s_selected . '>' . (($row['group_type'] == GROUP_SPECIAL) ? $user->lang['G_' . $row['group_name']] : $row['group_name']) . '</option>';
+				$s_group_options .= '<option value="' . $row['group_id'] . '"' . $s_class . $s_selected . '>' . $group_helper->get_name($row['group_name']) . '</option>';
 			}
 			$db->sql_freeresult($result);
 

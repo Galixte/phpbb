@@ -22,12 +22,13 @@ class phpbb_template_template_test_case_with_tree extends phpbb_template_templat
 		$defaults = $this->config_defaults();
 		$config = new \phpbb\config\config(array_merge($defaults, $new_config));
 
+		$filesystem = new \phpbb\filesystem\filesystem();
+
 		$this->phpbb_path_helper = new \phpbb\path_helper(
 			new \phpbb\symfony_request(
 				new phpbb_mock_request()
 			),
-			new \phpbb\filesystem(),
-			$this->getMock('\phpbb\request\request'),
+			$this->createMock('\phpbb\request\request'),
 			$phpbb_root_path,
 			$phpEx
 		);
@@ -41,11 +42,12 @@ class phpbb_template_template_test_case_with_tree extends phpbb_template_templat
 		$loader = new \phpbb\template\twig\loader('');
 		$twig = new \phpbb\template\twig\environment(
 			$config,
+			$filesystem,
 			$this->phpbb_path_helper,
-			$container,
 			$cache_path,
 			null,
 			$loader,
+			new \phpbb\event\dispatcher($container),
 			array(
 				'cache'			=> false,
 				'debug'			=> false,
@@ -53,8 +55,8 @@ class phpbb_template_template_test_case_with_tree extends phpbb_template_templat
 				'autoescape'	=> false,
 			)
 		);
-		$this->template = new phpbb\template\twig\twig($this->phpbb_path_helper, $config, $user, $context, $twig, $cache_path, array(new \phpbb\template\twig\extension($context, $this->user)));
-		$container->set('template.twig.lexer', new \phpbb\template\twig\lexer($twig));
+		$this->template = new phpbb\template\twig\twig($this->phpbb_path_helper, $config, $context, $twig, $cache_path, $this->user, array(new \phpbb\template\twig\extension($context, $this->user)));
+		$twig->setLexer(new \phpbb\template\twig\lexer($twig));
 		$this->template->set_custom_style('tests', array($this->template_path, $this->parent_template_path));
 	}
 }

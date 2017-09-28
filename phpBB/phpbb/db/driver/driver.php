@@ -66,6 +66,15 @@ abstract class driver implements driver_interface
 	*/
 	var $sql_server_version = false;
 
+	const LOGICAL_OP = 0;
+	const STATEMENTS = 1;
+	const LEFT_STMT = 0;
+	const COMPARE_OP = 1;
+	const RIGHT_STMT = 2;
+	const SUBQUERY_OP = 3;
+	const SUBQUERY_SELECT_TYPE = 4;
+	const SUBQUERY_BUILD = 5;
+
 	/**
 	* Constructor
 	*/
@@ -528,7 +537,9 @@ abstract class driver implements driver_interface
 	*/
 	function sql_in_set($field, $array, $negate = false, $allow_empty_set = false)
 	{
-		if (!sizeof($array))
+		$array = (array) $array;
+
+		if (!count($array))
 		{
 			if (!$allow_empty_set)
 			{
@@ -550,12 +561,7 @@ abstract class driver implements driver_interface
 			}
 		}
 
-		if (!is_array($array))
-		{
-			$array = array($array);
-		}
-
-		if (sizeof($array) == 1)
+		if (count($array) == 1)
 		{
 			@reset($array);
 			$var = current($array);
@@ -623,7 +629,7 @@ abstract class driver implements driver_interface
 	*/
 	function sql_multi_insert($table, $sql_ary)
 	{
-		if (!sizeof($sql_ary))
+		if (!count($sql_ary))
 		{
 			return false;
 		}
@@ -729,7 +735,7 @@ abstract class driver implements driver_interface
 				// We run the following code to determine if we need to re-order the table array. ;)
 				// The reason for this is that for multi-aliased tables (two equal tables) in the FROM statement the last table need to match the first comparison.
 				// DBMS who rely on this: Oracle, PostgreSQL and MSSQL. For all other DBMS it makes absolutely no difference in which order the table is.
-				if (!empty($array['LEFT_JOIN']) && sizeof($array['FROM']) > 1 && $used_multi_alias !== false)
+				if (!empty($array['LEFT_JOIN']) && count($array['FROM']) > 1 && $used_multi_alias !== false)
 				{
 					// Take first LEFT JOIN
 					$join = current($array['LEFT_JOIN']);
@@ -774,7 +780,18 @@ abstract class driver implements driver_interface
 
 				if (!empty($array['WHERE']))
 				{
-					$sql .= ' WHERE ' . $this->_sql_custom_build('WHERE', $array['WHERE']);
+					$sql .= ' WHERE ';
+
+					if (is_array($array['WHERE']))
+					{
+						$sql_where = $this->_process_boolean_tree_first($array['WHERE']);
+					}
+					else
+					{
+						$sql_where = $array['WHERE'];
+					}
+
+					$sql .= $this->_sql_custom_build('WHERE', $sql_where);
 				}
 
 				if (!empty($array['GROUP_BY']))
@@ -792,6 +809,130 @@ abstract class driver implements driver_interface
 
 		return $sql;
 	}
+
+
+	protected function _process_boolean_tree_first($operations_ary)
+	{
+		// In cases where an array exists but there is no head condition,
+		// it should be because there's only 1 WHERE clause. This seems the best way to deal with it.
+		if ($operations_ary[self::LOGICAL_OP] !== 'AND' &&
+			$operations_ary[self::LOGICAL_OP] !== 'OR')
+		{
+			$operations_ary = array('AND', array($operations_ary));
+		}
+		return $this->_process_boolean_tree($operations_ary) . "\n";
+	}
+
+	protected function _process_boolean_tree($operations_ary)
+	{
+		$operation = $operations_ary[self::LOGICAL_OP];
+
+		foreach ($operations_ary[self::STATEMENTS] as &$condition)
+		{
+			switch ($condition[self::LOGICAL_OP])
+			{
+				case 'AND':
+				case 'OR':
+
+					$condition = ' ( ' . $this->_process_boolean_tree($condition) . ') ';
+
+				break;
+				case 'NOT':
+
+					$condition = ' NOT (' . $this->_process_boolean_tree($condition) . ') ';
+
+				break;
+
+				default:
+
+					switch (count($condition))
+					{
+						case 3:
+
+							// Typical 3 element clause with {left hand} {operator} {right hand}
+							switch ($condition[self::COMPARE_OP])
+							{
+								case 'IN':
+								case 'NOT_IN':
+
+									// As this is used with an IN, assume it is a set of elements for sql_in_set()
+									$condition = $this->sql_in_set($condition[self::LEFT_STMT], $condition[self::RIGHT_STMT], $condition[self::COMPARE_OP] === 'NOT_IN', true);
+
+								break;
+
+								case 'LIKE':
+
+									$condition = $condition[self::LEFT_STMT] . ' ' . $this->sql_like_expression($condition[self::RIGHT_STMT]) . ' ';
+
+								break;
+
+								case 'NOT_LIKE':
+
+									$condition = $condition[self::LEFT_STMT] . ' ' . $this->sql_not_like_expression($condition[self::RIGHT_STMT]) . ' ';
+
+								break;
+
+								case 'IS_NOT':
+
+									$condition[self::COMPARE_OP] = 'IS NOT';
+
+								// no break
+								case 'IS':
+
+									// If the value is NULL, the string of it is the empty string ('') which is not the intended result.
+									// this should solve that
+									if ($condition[self::RIGHT_STMT] === null)
+									{
+										$condition[self::RIGHT_STMT] = 'NULL';
+									}
+
+									$condition = implode(' ', $condition);
+
+								break;
+
+								default:
+
+									$condition = implode(' ', $condition);
+
+								break;
+							}
+
+						break;
+
+						case 5:
+
+							// Subquery with {left hand} {operator} {compare kind} {SELECT Kind } {Sub Query}
+
+							$condition = $condition[self::LEFT_STMT] . ' ' . $condition[self::COMPARE_OP] . ' ' . $condition[self::SUBQUERY_OP] . ' ( ';
+							$condition .= $this->sql_build_query($condition[self::SUBQUERY_SELECT_TYPE], $condition[self::SUBQUERY_BUILD]);
+							$condition .= ' )';
+
+						break;
+
+						default:
+							// This is an unpredicted clause setup. Just join all elements.
+							$condition = implode(' ', $condition);
+
+						break;
+					}
+
+				break;
+			}
+
+		}
+
+		if ($operation === 'NOT')
+		{
+			$operations_ary =  implode("", $operations_ary[self::STATEMENTS]);
+		}
+		else
+		{
+			$operations_ary = implode(" \n	$operation ", $operations_ary[self::STATEMENTS]);
+		}
+
+		return $operations_ary;
+	}
+
 
 	/**
 	* {@inheritDoc}
@@ -868,7 +1009,7 @@ abstract class driver implements driver_interface
 	*/
 	function sql_report($mode, $query = '')
 	{
-		global $cache, $starttime, $phpbb_root_path, $phpbb_path_helper, $user;
+		global $cache, $starttime, $phpbb_root_path, $phpbb_path_helper;
 		global $request;
 
 		if (is_object($request) && !$request->variable('explain', false))
@@ -897,6 +1038,7 @@ abstract class driver implements driver_interface
 					<html dir="ltr">
 					<head>
 						<meta charset="utf-8">
+						<meta http-equiv="X-UA-Compatible" content="IE=edge">
 						<title>SQL Report</title>
 						<link href="' . htmlspecialchars($phpbb_path_helper->update_web_root_path($phpbb_root_path) . $phpbb_path_helper->get_adm_relative_path()) . 'style/admin.css" rel="stylesheet" type="text/css" media="screen" />
 					</head>
@@ -962,7 +1104,7 @@ abstract class driver implements driver_interface
 				{
 					if (preg_match('/^(UPDATE|DELETE|REPLACE)/', $query))
 					{
-						$this->sql_report .= 'Affected rows: <b>' . $this->sql_affectedrows($this->query_result) . '</b> | ';
+						$this->sql_report .= 'Affected rows: <b>' . $this->sql_affectedrows() . '</b> | ';
 					}
 					$this->sql_report .= 'Before: ' . sprintf('%.5f', $this->curtime - $starttime) . 's | After: ' . sprintf('%.5f', $endtime - $starttime) . 's | Elapsed: <b>' . sprintf('%.5f', $endtime - $this->curtime) . 's</b>';
 				}
@@ -993,7 +1135,7 @@ abstract class driver implements driver_interface
 				$html_table = func_get_arg(2);
 				$row = func_get_arg(3);
 
-				if (!$html_table && sizeof($row))
+				if (!$html_table && count($row))
 				{
 					$html_table = true;
 					$this->html_hold .= '<table cellspacing="1"><tr>';

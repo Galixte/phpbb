@@ -38,17 +38,18 @@ define('IN_PHPBB', true);
 $phpbb_root_path = dirname(__FILE__) . '/../';
 $phpEx = substr(strrchr(__FILE__, '.'), 1);
 
+include($phpbb_root_path . 'vendor/autoload.php');
 include($phpbb_root_path . 'includes/constants.' . $phpEx);
 require($phpbb_root_path . 'phpbb/class_loader.' . $phpEx);
 $phpbb_class_loader = new \phpbb\class_loader('phpbb\\', "{$phpbb_root_path}phpbb/", $phpEx);
 $phpbb_class_loader->register();
 
-$finder = new \phpbb\finder(new \phpbb\filesystem(), $phpbb_root_path);
+$finder = new \phpbb\finder($phpbb_root_path);
 $classes = $finder->core_path('phpbb/')
 	->directory('/db/migration/data')
 	->get_classes();
 
-$db = new \phpbb\db\driver\sqlite();
+$db = new \phpbb\db\driver\sqlite3();
 $factory = new \phpbb\db\tools\factory();
 $db_tools = $factory->get($db, true);
 

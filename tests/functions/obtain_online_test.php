@@ -11,9 +11,6 @@
 *
 */
 
-require_once dirname(__FILE__) . '/../../phpBB/includes/functions.php';
-require_once dirname(__FILE__) . '/../../phpBB/includes/functions_content.php';
-
 class phpbb_functions_obtain_online_test extends phpbb_database_test_case
 {
 	public function getDataSet()
@@ -165,7 +162,7 @@ class phpbb_functions_obtain_online_test extends phpbb_database_test_case
 		$config['load_online_guests'] = $display_guests;
 		$user = new phpbb_mock_lang();
 		$user->lang = $this->load_language();
-		$auth = $this->getMock('\phpbb\auth\auth');
+		$auth = $this->createMock('\phpbb\auth\auth');
 		$acl_get_map = array(
 			array('u_viewonline', true),
 			array('u_viewprofile', true),

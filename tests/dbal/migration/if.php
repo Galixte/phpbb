@@ -23,11 +23,11 @@ class phpbb_dbal_migration_if extends \phpbb\db\migration\migration
 		return array(
 			array('if', array(
 				true,
-				array('custom', array(array(&$this, 'test_true'))),
+				array('custom', array(array($this, 'test_true'))),
 			)),
 			array('if', array(
 				false,
-				array('custom', array(array(&$this, 'test_false'))),
+				array('custom', array(array($this, 'test_false'))),
 			)),
 		);
 	}
@@ -36,13 +36,13 @@ class phpbb_dbal_migration_if extends \phpbb\db\migration\migration
 	{
 		global $migrator_test_if_true_failed;
 
-		$migrator_test_if_true_failed = false;
+		$migrator_test_if_true_failed = !$migrator_test_if_true_failed;
 	}
 
 	function test_false()
 	{
 		global $migrator_test_if_false_failed;
 
-		$migrator_test_if_false_failed = true;
+		$migrator_test_if_false_failed = !$migrator_test_if_false_failed;
 	}
 }

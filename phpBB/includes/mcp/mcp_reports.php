@@ -35,7 +35,7 @@ class mcp_reports
 
 	function main($id, $mode)
 	{
-		global $auth, $db, $user, $template, $cache, $request;
+		global $auth, $db, $user, $template, $request;
 		global $config, $phpbb_root_path, $phpEx, $action, $phpbb_container, $phpbb_dispatcher;
 
 		include_once($phpbb_root_path . 'includes/functions_posting.' . $phpEx);
@@ -53,7 +53,7 @@ class mcp_reports
 
 				$report_id_list = $request->variable('report_id_list', array(0));
 
-				if (!sizeof($report_id_list))
+				if (!count($report_id_list))
 				{
 					trigger_error('NO_REPORT_SELECTED');
 				}
@@ -74,16 +74,65 @@ class mcp_reports
 				// closed reports are accessed by report id
 				$report_id = $request->variable('r', 0);
 
-				$sql = 'SELECT r.post_id, r.user_id, r.report_id, r.report_closed, report_time, r.report_text, r.reported_post_text, r.reported_post_uid, r.reported_post_bitfield, r.reported_post_enable_magic_url, r.reported_post_enable_smilies, r.reported_post_enable_bbcode, rr.reason_title, rr.reason_description, u.username, u.username_clean, u.user_colour
-					FROM ' . REPORTS_TABLE . ' r, ' . REPORTS_REASONS_TABLE . ' rr, ' . USERS_TABLE . ' u
-					WHERE ' . (($report_id) ? 'r.report_id = ' . $report_id : "r.post_id = $post_id") . '
+				$sql_ary = array(
+					'SELECT'	=> 'r.post_id, r.user_id, r.report_id, r.report_closed, report_time, r.report_text, r.reported_post_text, r.reported_post_uid, r.reported_post_bitfield, r.reported_post_enable_magic_url, r.reported_post_enable_smilies, r.reported_post_enable_bbcode, rr.reason_title, rr.reason_description, u.username, u.username_clean, u.user_colour',
+
+					'FROM'		=> array(
+						REPORTS_TABLE			=> 'r',
+						REPORTS_REASONS_TABLE	=> 'rr',
+						USERS_TABLE				=> 'u',
+					),
+
+					'WHERE'		=> (($report_id) ? 'r.report_id = ' . $report_id : "r.post_id = $post_id") . '
 						AND rr.reason_id = r.reason_id
 						AND r.user_id = u.user_id
-						AND r.pm_id = 0
-					ORDER BY report_closed ASC';
+						AND r.pm_id = 0',
+
+					'ORDER_BY'	=> 'report_closed ASC',
+				);
+
+				/**
+				* Allow changing the query to obtain the user-submitted report.
+				*
+				* @event core.mcp_reports_report_details_query_before
+				* @var	array	sql_ary			The array in the format of the query builder with the query
+				* @var	int		forum_id		The forum_id, the number in the f GET parameter
+				* @var	int		post_id			The post_id of the report being viewed (if 0, it is meaningless)
+				* @var	int		report_id		The report_id of the report being viewed
+				* @since 3.1.5-RC1
+				*/
+				$vars = array(
+					'sql_ary',
+					'forum_id',
+					'post_id',
+					'report_id',
+				);
+				extract($phpbb_dispatcher->trigger_event('core.mcp_reports_report_details_query_before', compact($vars)));
+
+				$sql = $db->sql_build_query('SELECT', $sql_ary);
 				$result = $db->sql_query_limit($sql, 1);
 				$report = $db->sql_fetchrow($result);
 				$db->sql_freeresult($result);
+
+				/**
+				* Allow changing the data obtained from the user-submitted report.
+				*
+				* @event core.mcp_reports_report_details_query_after
+				* @var	array	sql_ary		The array in the format of the query builder with the query that had been executted
+				* @var	int		forum_id	The forum_id, the number in the f GET parameter
+				* @var	int		post_id		The post_id of the report being viewed (if 0, it is meaningless)
+				* @var	int		report_id	The report_id of the report being viewed
+				* @var	array	report		The query's resulting row.
+				* @since 3.1.5-RC1
+				*/
+				$vars = array(
+					'sql_ary',
+					'forum_id',
+					'post_id',
+					'report_id',
+					'report',
+				);
+				extract($phpbb_dispatcher->trigger_event('core.mcp_reports_report_details_query_after', compact($vars)));
 
 				if (!$report)
 				{
@@ -93,7 +142,7 @@ class mcp_reports
 				/* @var $phpbb_notifications \phpbb\notification\manager */
 				$phpbb_notifications = $phpbb_container->get('notification_manager');
 
-				$phpbb_notifications->mark_notifications_read('notification.type.report_post', $post_id, $user->data['user_id']);
+				$phpbb_notifications->mark_notifications('report_post', $post_id, $user->data['user_id']);
 
 				if (!$report_id && $report['report_closed'])
 				{
@@ -109,7 +158,7 @@ class mcp_reports
 
 				$post_info = phpbb_get_post_data(array($post_id), 'm_report', true);
 
-				if (!sizeof($post_info))
+				if (!count($post_info))
 				{
 					trigger_error('NO_REPORT_SELECTED');
 				}
@@ -133,7 +182,7 @@ class mcp_reports
 					));
 				}
 
-				$topic_tracking_info = $extensions = $attachments = array();
+				$attachments = array();
 				// Get topic tracking info
 				if ($config['load_db_lastread'])
 				{
@@ -173,7 +222,7 @@ class mcp_reports
 					}
 					$db->sql_freeresult($result);
 
-					if (sizeof($attachments))
+					if (count($attachments))
 					{
 						$update_count = array();
 						parse_attachments($post_info['forum_id'], $message, $attachments, $update_count);
@@ -272,7 +321,7 @@ class mcp_reports
 				{
 					$topic_info = phpbb_get_topic_data(array($topic_id));
 
-					if (!sizeof($topic_info))
+					if (!count($topic_info))
 					{
 						trigger_error('TOPIC_NOT_EXIST');
 					}
@@ -297,12 +346,10 @@ class mcp_reports
 						$forum_list[] = $row['forum_id'];
 					}
 
-					if (!sizeof($forum_list))
+					if (!count($forum_list))
 					{
 						trigger_error('NOT_MODERATOR');
 					}
-
-					$global_id = $forum_list[0];
 
 					$sql = 'SELECT SUM(forum_topics_approved) as sum_forum_topics
 						FROM ' . FORUMS_TABLE . '
@@ -315,12 +362,11 @@ class mcp_reports
 				{
 					$forum_info = phpbb_get_forum_data(array($forum_id), 'm_report');
 
-					if (!sizeof($forum_info))
+					if (!count($forum_info))
 					{
 						trigger_error('NOT_MODERATOR');
 					}
 
-					$forum_info = $forum_info[$forum_id];
 					$forum_list = array($forum_id);
 				}
 
@@ -342,7 +388,6 @@ class mcp_reports
 				$sort_by_sql = $sort_order_sql = array();
 				phpbb_mcp_sorting($mode, $sort_days, $sort_key, $sort_dir, $sort_by_sql, $sort_order_sql, $total, $forum_id, $topic_id);
 
-				$forum_topics = ($total == -1) ? $forum_info['forum_topics_approved'] : $total;
 				$limit_time_sql = ($sort_days) ? 'AND r.report_time >= ' . (time() - ($sort_days * 86400)) : '';
 
 				if ($mode == 'reports')
@@ -398,7 +443,7 @@ class mcp_reports
 				}
 				$db->sql_freeresult($result);
 
-				if (sizeof($report_ids))
+				if (count($report_ids))
 				{
 					$sql = 'SELECT t.forum_id, t.topic_id, t.topic_title, p.post_id, p.post_subject, p.post_username, p.poster_id, p.post_time, p.post_attachment, u.username, u.username_clean, u.user_colour, r.user_id as reporter_id, ru.username as reporter_name, ru.user_colour as reporter_colour, r.report_time, r.report_id
 						FROM ' . REPORTS_TABLE . ' r, ' . POSTS_TABLE . ' p, ' . TOPICS_TABLE . ' t, ' . USERS_TABLE . ' u, ' . USERS_TABLE . ' ru
@@ -411,7 +456,6 @@ class mcp_reports
 						ORDER BY ' . $sort_order_sql;
 					$result = $db->sql_query($sql);
 
-					$report_data = $rowset = array();
 					while ($row = $db->sql_fetchrow($result))
 					{
 						$template->assign_block_vars('postrow', array(
@@ -473,7 +517,7 @@ class mcp_reports
 */
 function close_report($report_id_list, $mode, $action, $pm = false)
 {
-	global $db, $template, $user, $config, $auth, $phpbb_log, $request;
+	global $db, $user, $auth, $phpbb_log, $request;
 	global $phpEx, $phpbb_root_path, $phpbb_container;
 
 	$pm_where = ($pm) ? ' AND r.post_id = 0 ' : ' AND r.pm_id = 0 ';
@@ -491,12 +535,14 @@ function close_report($report_id_list, $mode, $action, $pm = false)
 	{
 		$post_id_list[] = $row[$id_column];
 	}
+	$db->sql_freeresult($result);
 	$post_id_list = array_unique($post_id_list);
 
 	if ($pm)
 	{
 		if (!$auth->acl_getf_global('m_report'))
 		{
+			send_status_line(403, 'Forbidden');
 			trigger_error('NOT_AUTHORISED');
 		}
 	}
@@ -504,6 +550,7 @@ function close_report($report_id_list, $mode, $action, $pm = false)
 	{
 		if (!phpbb_check_ids($post_id_list, POSTS_TABLE, 'post_id', array('m_report')))
 		{
+			send_status_line(403, 'Forbidden');
 			trigger_error('NOT_AUTHORISED');
 		}
 	}
@@ -570,12 +617,12 @@ function close_report($report_id_list, $mode, $action, $pm = false)
 		}
 		$db->sql_freeresult($result);
 
-		if (sizeof($reports))
+		if (count($reports))
 		{
 			$close_report_posts = array_unique($close_report_posts);
 			$close_report_topics = array_unique($close_report_topics);
 
-			if (!$pm && sizeof($close_report_posts))
+			if (!$pm && count($close_report_posts))
 			{
 				// Get a list of topics that still contain reported posts
 				$sql = 'SELECT DISTINCT topic_id
@@ -611,7 +658,7 @@ function close_report($report_id_list, $mode, $action, $pm = false)
 			}
 			$db->sql_query($sql);
 
-			if (sizeof($close_report_posts))
+			if (count($close_report_posts))
 			{
 				if ($pm)
 				{
@@ -632,7 +679,7 @@ function close_report($report_id_list, $mode, $action, $pm = false)
 						WHERE ' . $db->sql_in_set('post_id', $close_report_posts);
 					$db->sql_query($sql);
 
-					if (sizeof($close_report_topics))
+					if (count($close_report_topics))
 					{
 						$sql = 'UPDATE ' . TOPICS_TABLE . '
 							SET topic_reported = 0
@@ -666,6 +713,7 @@ function close_report($report_id_list, $mode, $action, $pm = false)
 				$phpbb_log->add('mod', $user->data['user_id'], $user->ip, 'LOG_REPORT_' .  strtoupper($action) . 'D', false, array(
 					'forum_id' => $post_info[$report['post_id']]['forum_id'],
 					'topic_id' => $post_info[$report['post_id']]['topic_id'],
+					'post_id'  => $report['post_id'],
 					$post_info[$report['post_id']]['post_subject']
 				));
 				$phpbb_notifications->delete_notifications('notification.type.report_post', $report['post_id']);
@@ -673,7 +721,7 @@ function close_report($report_id_list, $mode, $action, $pm = false)
 		}
 
 		// Notify reporters
-		if (sizeof($notify_reporters))
+		if (count($notify_reporters))
 		{
 			foreach ($notify_reporters as $report_id => $reporter)
 			{
@@ -713,11 +761,11 @@ function close_report($report_id_list, $mode, $action, $pm = false)
 
 		unset($notify_reporters, $post_info, $reports);
 
-		$success_msg = (sizeof($report_id_list) == 1) ? "{$pm_prefix}REPORT_" . strtoupper($action) . 'D_SUCCESS' : "{$pm_prefix}REPORTS_" . strtoupper($action) . 'D_SUCCESS';
+		$success_msg = (count($report_id_list) == 1) ? "{$pm_prefix}REPORT_" . strtoupper($action) . 'D_SUCCESS' : "{$pm_prefix}REPORTS_" . strtoupper($action) . 'D_SUCCESS';
 	}
 	else
 	{
-		confirm_box(false, $user->lang[strtoupper($action) . "_{$pm_prefix}REPORT" . ((sizeof($report_id_list) == 1) ? '' : 'S') . '_CONFIRM'], $s_hidden_fields);
+		confirm_box(false, $user->lang[strtoupper($action) . "_{$pm_prefix}REPORT" . ((count($report_id_list) == 1) ? '' : 'S') . '_CONFIRM'], $s_hidden_fields);
 	}
 
 	$redirect = $request->variable('redirect', "index.$phpEx");
@@ -736,12 +784,12 @@ function close_report($report_id_list, $mode, $action, $pm = false)
 
 		if (!$pm)
 		{
-			if (sizeof($forum_ids) === 1)
+			if (count($forum_ids) === 1)
 			{
 				$return_forum = sprintf($user->lang['RETURN_FORUM'], '<a href="' . append_sid("{$phpbb_root_path}viewforum.$phpEx", 'f=' . current($forum_ids)) . '">', '</a>') . '<br /><br />';
 			}
 
-			if (sizeof($topic_ids) === 1)
+			if (count($topic_ids) === 1)
 			{
 				$return_topic = sprintf($user->lang['RETURN_TOPIC'], '<a href="' . append_sid("{$phpbb_root_path}viewtopic.$phpEx", 't=' . current($topic_ids) . '&amp;f=' . current($forum_ids)) . '">', '</a>') . '<br /><br />';
 			}

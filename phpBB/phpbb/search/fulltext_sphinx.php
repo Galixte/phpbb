@@ -96,6 +96,12 @@ class fulltext_sphinx
 	protected $dbtype;
 
 	/**
+	 * phpBB event dispatcher object
+	 * @var \phpbb\event\dispatcher_interface
+	 */
+	protected $phpbb_dispatcher;
+
+	/**
 	 * User object
 	 * @var \phpbb\user
 	 */
@@ -125,12 +131,14 @@ class fulltext_sphinx
 	 * @param \phpbb\config\config $config Config object
 	 * @param \phpbb\db\driver\driver_interface Database object
 	 * @param \phpbb\user $user User object
+	 * @param \phpbb\event\dispatcher_interface	$phpbb_dispatcher	Event dispatcher object
 	 */
-	public function __construct(&$error, $phpbb_root_path, $phpEx, $auth, $config, $db, $user)
+	public function __construct(&$error, $phpbb_root_path, $phpEx, $auth, $config, $db, $user, $phpbb_dispatcher)
 	{
 		$this->phpbb_root_path = $phpbb_root_path;
 		$this->php_ext = $phpEx;
 		$this->config = $config;
+		$this->phpbb_dispatcher = $phpbb_dispatcher;
 		$this->user = $user;
 		$this->db = $db;
 		$this->auth = $auth;
@@ -139,7 +147,7 @@ class fulltext_sphinx
 		global $phpbb_container; // TODO inject into object
 		$this->db_tools = $phpbb_container->get('dbal.tools');
 
-		if(!$this->config['fulltext_sphinx_id'])
+		if (!$this->config['fulltext_sphinx_id'])
 		{
 			$this->config->set('fulltext_sphinx_id', unique_id());
 		}
@@ -351,6 +359,23 @@ class fulltext_sphinx
 
 		$non_unique = array('sql_query_pre' => true, 'sql_attr_uint' => true, 'sql_attr_timestamp' => true, 'sql_attr_str2ordinal' => true, 'sql_attr_bool' => true);
 		$delete = array('sql_group_column' => true, 'sql_date_column' => true, 'sql_str2ordinal_column' => true);
+
+		/**
+		* Allow adding/changing the Sphinx configuration data
+		*
+		* @event core.search_sphinx_modify_config_data
+		* @var	array	config_data	Array with the Sphinx configuration data
+		* @var	array	non_unique	Array with the Sphinx non-unique variables to delete
+		* @var	array	delete		Array with the Sphinx variables to delete
+		* @since 3.1.7-RC1
+		*/
+		$vars = array(
+			'config_data',
+			'non_unique',
+			'delete',
+		);
+		extract($this->phpbb_dispatcher->trigger_event('core.search_sphinx_modify_config_data', compact($vars)));
+
 		foreach ($config_data as $section_name => $section_data)
 		{
 			$section = $config_object->get_section_by_name($section_name);
@@ -379,7 +404,7 @@ class fulltext_sphinx
 					$variable = $section->get_variable_by_name($key);
 					if (!$variable)
 					{
-						$variable = $section->create_variable($key, $value);
+						$section->create_variable($key, $value);
 					}
 					else
 					{
@@ -388,7 +413,7 @@ class fulltext_sphinx
 				}
 				else
 				{
-					$variable = $section->create_variable($key, $value);
+					$section->create_variable($key, $value);
 				}
 			}
 		}
@@ -412,7 +437,6 @@ class fulltext_sphinx
 			$match		= array('#\sand\s#i', '#\sor\s#i', '#\snot\s#i', '#\+#', '#-#', '#\|#', '#@#');
 			$replace	= array(' & ', ' | ', '  - ', ' +', ' -', ' |', '');
 
-			$replacements = 0;
 			$keywords = preg_replace($match, $replace, $keywords);
 			$this->sphinx->SetMatchMode(SPH_MATCH_EXTENDED);
 		}
@@ -458,14 +482,12 @@ class fulltext_sphinx
 		global $user, $phpbb_log;
 
 		// No keywords? No posts.
-		if (!strlen($this->search_query) && !sizeof($author_ary))
+		if (!strlen($this->search_query) && !count($author_ary))
 		{
 			return false;
 		}
 
 		$id_ary = array();
-
-		$join_topic = ($type != 'posts');
 
 		// Sorting
 
@@ -526,6 +548,41 @@ class fulltext_sphinx
 			$this->sphinx->SetFilter('topic_id', array($topic_id));
 		}
 
+		/**
+		* Allow modifying the Sphinx search options
+		*
+		* @event core.search_sphinx_keywords_modify_options
+		* @var	string	type				Searching type ('posts', 'topics')
+		* @var	string	fields				Searching fields ('titleonly', 'msgonly', 'firstpost', 'all')
+		* @var	string	terms				Searching terms ('all', 'any')
+		* @var	int		sort_days			Time, in days, of the oldest possible post to list
+		* @var	string	sort_key			The sort type used from the possible sort types
+		* @var	int		topic_id			Limit the search to this topic_id only
+		* @var	array	ex_fid_ary			Which forums not to search on
+		* @var	string	post_visibility		Post visibility data
+		* @var	array	author_ary			Array of user_id containing the users to filter the results to
+		* @var	string	author_name			The username to search on
+		* @var	object	sphinx				The Sphinx searchd client object
+		* @since 3.1.7-RC1
+		*/
+		$sphinx = $this->sphinx;
+		$vars = array(
+			'type',
+			'fields',
+			'terms',
+			'sort_days',
+			'sort_key',
+			'topic_id',
+			'ex_fid_ary',
+			'post_visibility',
+			'author_ary',
+			'author_name',
+			'sphinx',
+		);
+		extract($this->phpbb_dispatcher->trigger_event('core.search_sphinx_keywords_modify_options', compact($vars)));
+		$this->sphinx = $sphinx;
+		unset($sphinx);
+
 		$search_query_prefix = '';
 
 		switch ($fields)
@@ -565,7 +622,7 @@ class fulltext_sphinx
 			break;
 		}
 
-		if (sizeof($author_ary))
+		if (count($author_ary))
 		{
 			$this->sphinx->SetFilter('poster_id', $author_ary);
 		}
@@ -575,14 +632,14 @@ class fulltext_sphinx
 		// but at least it will also cause the same for normal users.
 		$this->sphinx->SetFilter('post_visibility', array(ITEM_APPROVED));
 
-		if (sizeof($ex_fid_ary))
+		if (count($ex_fid_ary))
 		{
 			// All forums that a user is allowed to access
 			$fid_ary = array_unique(array_intersect(array_keys($this->auth->acl_getf('f_read', true)), array_keys($this->auth->acl_getf('f_search', true))));
 			// All forums that the user wants to and can search in
 			$search_forums = array_diff($fid_ary, $ex_fid_ary);
 
-			if (sizeof($search_forums))
+			if (count($search_forums))
 			{
 				$this->sphinx->SetFilter('forum_id', $search_forums);
 			}
@@ -732,7 +789,7 @@ class fulltext_sphinx
 			}
 			$this->db->sql_freeresult($result);
 
-			if (sizeof($post_updates))
+			if (count($post_updates))
 			{
 				$this->sphinx->UpdateAttributes($this->indexes, array('topic_last_post_time'), $post_updates);
 			}
@@ -895,11 +952,11 @@ class fulltext_sphinx
 		</dl>
 		<dl>
 			<dt><label for="fulltext_sphinx_port">' . $this->user->lang['FULLTEXT_SPHINX_PORT'] . $this->user->lang['COLON'] . '</label><br /><span>' . $this->user->lang['FULLTEXT_SPHINX_PORT_EXPLAIN'] . '</span></dt>
-			<dd><input id="fulltext_sphinx_port" type="number" size="4" maxlength="10" name="config[fulltext_sphinx_port]" value="' . $this->config['fulltext_sphinx_port'] . '" /></dd>
+			<dd><input id="fulltext_sphinx_port" type="number" min="0" max="9999999999" name="config[fulltext_sphinx_port]" value="' . $this->config['fulltext_sphinx_port'] . '" /></dd>
 		</dl>
 		<dl>
 			<dt><label for="fulltext_sphinx_indexer_mem_limit">' . $this->user->lang['FULLTEXT_SPHINX_INDEXER_MEM_LIMIT'] . $this->user->lang['COLON'] . '</label><br /><span>' . $this->user->lang['FULLTEXT_SPHINX_INDEXER_MEM_LIMIT_EXPLAIN'] . '</span></dt>
-			<dd><input id="fulltext_sphinx_indexer_mem_limit" type="number" size="4" maxlength="10" name="config[fulltext_sphinx_indexer_mem_limit]" value="' . $this->config['fulltext_sphinx_indexer_mem_limit'] . '" /> ' . $this->user->lang['MIB'] . '</dd>
+			<dd><input id="fulltext_sphinx_indexer_mem_limit" type="number" min="0" max="9999999999" name="config[fulltext_sphinx_indexer_mem_limit]" value="' . $this->config['fulltext_sphinx_indexer_mem_limit'] . '" /> ' . $this->user->lang['MIB'] . '</dd>
 		</dl>
 		<dl>
 			<dt><label for="fulltext_sphinx_config_file">' . $this->user->lang['FULLTEXT_SPHINX_CONFIG_FILE'] . $this->user->lang['COLON'] . '</label><br /><span>' . $this->user->lang['FULLTEXT_SPHINX_CONFIG_FILE_EXPLAIN'] . '</span></dt>

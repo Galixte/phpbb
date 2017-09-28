@@ -11,12 +11,6 @@
 set -e
 set -x
 
-if [ "$TRAVIS_PHP_VERSION" = 'hhvm' ]
-then
-	# Add PPA providing dependencies for recent HHVM on Ubuntu 12.04.
-	sudo add-apt-repository -y ppa:mapnik/boost
-fi
-
 sudo apt-get update
 sudo apt-get install -y nginx realpath
 
@@ -30,11 +24,9 @@ APP_SOCK=$(realpath "$DIR")/php-app.sock
 
 if [ "$TRAVIS_PHP_VERSION" = 'hhvm' ]
 then
-	# Upgrade to a recent stable version of HHVM
-	sudo apt-get -o Dpkg::Options::="--force-confnew" install -y hhvm-nightly
-
 	HHVM_LOG=$(realpath "$DIR")/hhvm.log
 
+    sudo service hhvm stop
 	sudo hhvm \
 		--mode daemon \
 		--user "$USER" \
@@ -65,20 +57,12 @@ else
 fi
 
 # nginx
-echo "
-	server {
-		listen	80;
-		root	$PHPBB_ROOT_PATH/;
-		index	index.php index.html;
-
-		location ~ \.php {
-			include							fastcgi_params;
-			fastcgi_split_path_info			^(.+\.php)(/.*)$;
-			fastcgi_param PATH_INFO			\$fastcgi_path_info;
-			fastcgi_param SCRIPT_FILENAME	\$document_root\$fastcgi_script_name;
-			fastcgi_pass					unix:$APP_SOCK;
-		}
-	}
-" | sudo tee $NGINX_CONF > /dev/null
+cat $DIR/../phpBB/docs/nginx.sample.conf \
+| sed "s/root \/path\/to\/phpbb/root $(echo $PHPBB_ROOT_PATH | sed -e 's/\\/\\\\/g' -e 's/\//\\\//g' -e 's/&/\\\&/g')/g" \
+| sed -e '1,/The actual board domain/d' \
+| sed -e '/If running php as fastcgi/,$d' \
+| sed -e "s/fastcgi_pass php;/fastcgi_pass unix:$(echo $APP_SOCK | sed -e 's/\\/\\\\/g' -e 's/\//\\\//g' -e 's/&/\\\&/g');/g" \
+| sed -e 's/#listen 80/listen 80/' \
+| sudo tee $NGINX_CONF
 
 sudo service nginx start

@@ -13,6 +13,8 @@
 
 namespace phpbb\template\twig;
 
+use phpbb\filesystem\helper as filesystem_helper;
+
 /**
 * Twig Template loader
 */
@@ -49,7 +51,7 @@ class loader extends \Twig_Loader_Filesystem
 	*/
 	public function addSafeDirectory($directory)
 	{
-		$directory = phpbb_realpath($directory);
+		$directory = filesystem_helper::realpath($directory);
 
 		if ($directory !== false)
 		{
@@ -83,6 +85,16 @@ class loader extends \Twig_Loader_Filesystem
 	}
 
 	/**
+	 * Adds a realpath call to fix a BC break in Twig 1.26 (https://github.com/twigphp/Twig/issues/2145)
+	 *
+	 * {@inheritdoc}
+	 */
+	public function addPath($path, $namespace = self::MAIN_NAMESPACE)
+	{
+		return parent::addPath(filesystem_helper::realpath($path), $namespace);
+	}
+
+	/**
 	* Find the template
 	*
 	* Override for Twig_Loader_Filesystem::findTemplate to add support
@@ -97,7 +109,8 @@ class loader extends \Twig_Loader_Filesystem
 
 		// If this is in the cache we can skip the entire process below
 		//	as it should have already been validated
-		if (isset($this->cache[$name])) {
+		if (isset($this->cache[$name]))
+		{
 			return $this->cache[$name];
 		}
 
@@ -118,7 +131,7 @@ class loader extends \Twig_Loader_Filesystem
 				//	can now check if we're within a "safe" directory
 
 				// Find the real path of the directory the file is in
-				$directory = phpbb_realpath(dirname($file));
+				$directory = filesystem_helper::realpath(dirname($file));
 
 				if ($directory === false)
 				{

@@ -11,11 +11,12 @@
 *
 */
 
-require_once dirname(__FILE__) . '/../../phpBB/includes/functions.php';
 require_once dirname(__FILE__) . '/migration/dummy.php';
 require_once dirname(__FILE__) . '/migration/unfulfillable.php';
 require_once dirname(__FILE__) . '/migration/if.php';
 require_once dirname(__FILE__) . '/migration/recall.php';
+require_once dirname(__FILE__) . '/migration/if_params.php';
+require_once dirname(__FILE__) . '/migration/recall_params.php';
 require_once dirname(__FILE__) . '/migration/revert.php';
 require_once dirname(__FILE__) . '/migration/revert_with_dependency.php';
 require_once dirname(__FILE__) . '/migration/fail.php';
@@ -63,14 +64,11 @@ class phpbb_dbal_migrator_test extends phpbb_database_test_case
 		);
 		$container->set('migrator', $this->migrator);
 		$container->set('dispatcher', new phpbb_mock_event_dispatcher());
-		$user = new \phpbb\user('\phpbb\datetime');
 
 		$this->extension_manager = new \phpbb\extension\manager(
 			$container,
 			$this->db,
 			$this->config,
-			new phpbb\filesystem(),
-			$user,
 			'phpbb_ext',
 			dirname(__FILE__) . '/../../phpBB/',
 			'php',
@@ -157,6 +155,14 @@ class phpbb_dbal_migrator_test extends phpbb_database_test_case
 
 		$this->assertFalse($migrator_test_if_true_failed, 'True test failed');
 		$this->assertFalse($migrator_test_if_false_failed, 'False test failed');
+
+		while ($this->migrator->migration_state('phpbb_dbal_migration_if') !== false)
+		{
+			$this->migrator->revert('phpbb_dbal_migration_if');
+		}
+
+		$this->assertFalse($migrator_test_if_true_failed, 'True test after revert failed');
+		$this->assertFalse($migrator_test_if_false_failed, 'False test after revert failed');
 	}
 
 	public function test_recall()
@@ -179,6 +185,54 @@ class phpbb_dbal_migrator_test extends phpbb_database_test_case
 		}
 
 		$this->assertSame(10, $migrator_test_call_input);
+	}
+
+	public function test_if_params()
+	{
+		$this->migrator->set_migrations(array('phpbb_dbal_migration_if_params'));
+
+		// Don't like this, but I'm not sure there is any other way to do this
+		global $migrator_test_if_true_failed, $migrator_test_if_false_failed;
+		$migrator_test_if_true_failed = true;
+		$migrator_test_if_false_failed = false;
+
+		while (!$this->migrator->finished())
+		{
+			$this->migrator->update();
+		}
+
+		$this->assertFalse($migrator_test_if_true_failed, 'True test failed');
+		$this->assertFalse($migrator_test_if_false_failed, 'False test failed');
+
+		while ($this->migrator->migration_state('phpbb_dbal_migration_if_params') !== false)
+		{
+			$this->migrator->revert('phpbb_dbal_migration_if_params');
+		}
+
+		$this->assertFalse($migrator_test_if_true_failed, 'True test after revert failed');
+		$this->assertFalse($migrator_test_if_false_failed, 'False test after revert failed');
+	}
+
+	public function test_recall_params()
+	{
+		$this->migrator->set_migrations(array('phpbb_dbal_migration_recall_params'));
+
+		global $migrator_test_call_input;
+
+		// Run the schema first
+		$this->migrator->update();
+
+		$i = 0;
+		while (!$this->migrator->finished())
+		{
+			$this->migrator->update();
+
+			$this->assertSame($i, $migrator_test_call_input);
+
+			$i++;
+		}
+
+		$this->assertSame(5, $migrator_test_call_input);
 	}
 
 	public function test_revert()

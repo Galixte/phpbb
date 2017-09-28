@@ -129,6 +129,31 @@ $phpbb_content_visibility = $phpbb_container->get('content.visibility');
 /* @var $pagination \phpbb\pagination */
 $pagination = $phpbb_container->get('pagination');
 
+$template->assign_block_vars('navlinks', array(
+	'FORUM_NAME'	=> $user->lang('SEARCH'),
+	'U_VIEW_FORUM'	=> append_sid("{$phpbb_root_path}search.$phpEx"),
+));
+
+/**
+* This event allows you to alter the above parameters, such as keywords and submit
+*
+* @event core.search_modify_submit_parameters
+* @var	string	keywords	The search keywords
+* @var	string	author		Specifies the author match, when ANONYMOUS is also a search-match
+* @var	int		author_id	ID of the author to search by
+* @var	string	search_id	Predefined search type name
+* @var	bool	submit		Whether or not the form has been submitted
+* @since 3.1.10-RC1
+*/
+$vars = array(
+	'keywords',
+	'author',
+	'author_id',
+	'search_id',
+	'submit',
+);
+extract($phpbb_dispatcher->trigger_event('core.search_modify_submit_parameters', compact($vars)));
+
 if ($keywords || $author || $author_id || $search_id || $submit)
 {
 	// clear arrays
@@ -178,7 +203,7 @@ if ($keywords || $author || $author_id || $search_id || $submit)
 			$sql_author_match = (strpos($author, '*') !== false) ? ' ' . $db->sql_like_expression(str_replace('*', $db->get_any_char(), utf8_clean_string($author))) : " = '" . $db->sql_escape(utf8_clean_string($author)) . "'";
 		}
 
-		if (!sizeof($author_id_ary))
+		if (!count($author_id_ary))
 		{
 			trigger_error('NO_SEARCH_RESULTS');
 		}
@@ -200,7 +225,7 @@ if ($keywords || $author || $author_id || $search_id || $submit)
 	}
 
 	// Which forums should not be searched? Author searches are also carried out in unindexed forums
-	if (empty($keywords) && sizeof($author_id_ary))
+	if (empty($keywords) && count($author_id_ary))
 	{
 		$ex_fid_ary = array_keys($auth->acl_getf('!f_read', true));
 	}
@@ -209,7 +234,7 @@ if ($keywords || $author || $author_id || $search_id || $submit)
 		$ex_fid_ary = array_unique(array_merge(array_keys($auth->acl_getf('!f_read', true)), array_keys($auth->acl_getf('!f_search', true))));
 	}
 
-	$not_in_fid = (sizeof($ex_fid_ary)) ? 'WHERE ' . $db->sql_in_set('f.forum_id', $ex_fid_ary, true) . " OR (f.forum_password <> '' AND fa.user_id <> " . (int) $user->data['user_id'] . ')' : "";
+	$not_in_fid = (count($ex_fid_ary)) ? 'WHERE ' . $db->sql_in_set('f.forum_id', $ex_fid_ary, true) . " OR (f.forum_password <> '' AND fa.user_id <> " . (int) $user->data['user_id'] . ')' : "";
 
 	$sql = 'SELECT f.forum_id, f.forum_name, f.parent_id, f.forum_type, f.right_id, f.forum_password, f.forum_flags, fa.user_id
 		FROM ' . FORUMS_TABLE . ' f
@@ -236,7 +261,7 @@ if ($keywords || $author || $author_id || $search_id || $submit)
 			continue;
 		}
 
-		if (sizeof($search_forum))
+		if (count($search_forum))
 		{
 			if ($search_child)
 			{
@@ -277,7 +302,7 @@ if ($keywords || $author || $author_id || $search_id || $submit)
 	}
 	// We do some additional checks in the module to ensure it can actually be utilised
 	$error = false;
-	$search = new $search_type($error, $phpbb_root_path, $phpEx, $auth, $config, $db, $user);
+	$search = new $search_type($error, $phpbb_root_path, $phpEx, $auth, $config, $db, $user, $phpbb_dispatcher);
 
 	if ($error)
 	{
@@ -289,9 +314,9 @@ if ($keywords || $author || $author_id || $search_id || $submit)
 	{
 		$correct_query = $search->split_keywords($keywords, $search_terms);
 		$common_words = $search->get_common_words();
-		if (!$correct_query || (!$search->get_search_query() && !sizeof($author_id_ary) && !$search_id))
+		if (!$correct_query || (!$search->get_search_query() && !count($author_id_ary) && !$search_id))
 		{
-			$ignored = (sizeof($common_words)) ? sprintf($user->lang['IGNORED_TERMS_EXPLAIN'], implode(' ', $common_words)) . '<br />' : '';
+			$ignored = (count($common_words)) ? sprintf($user->lang['IGNORED_TERMS_EXPLAIN'], implode(' ', $common_words)) . '<br />' : '';
 			$word_length = $search->get_word_length();
 			if ($word_length)
 			{
@@ -304,7 +329,7 @@ if ($keywords || $author || $author_id || $search_id || $submit)
 		}
 	}
 
-	if (!$keywords && sizeof($author_id_ary))
+	if (!$keywords && count($author_id_ary))
 	{
 		// if it is an author search we want to show topics by default
 		$show_results = ($topic_id) ? 'posts' : $request->variable('sr', ($search_id == 'egosearch') ? 'topics' : 'posts');
@@ -323,7 +348,10 @@ if ($keywords || $author || $author_id || $search_id || $submit)
 	* @var	array	ex_fid_ary		Array of excluded forum ids
 	* @var	array	author_id_ary	Array of exclusive author ids
 	* @var	string	search_id		The id of the search request
+	* @var	array	id_ary			Array of post or topic ids for search result
+	* @var	string	show_results	'posts' or 'topics' type of ids
 	* @since 3.1.3-RC1
+	* @changed 3.1.10-RC1 Added id_ary, show_results
 	*/
 	$vars = array(
 		'keywords',
@@ -331,6 +359,8 @@ if ($keywords || $author || $author_id || $search_id || $submit)
 		'ex_fid_ary',
 		'author_id_ary',
 		'search_id',
+		'id_ary',
+		'show_results',
 	);
 	extract($phpbb_dispatcher->trigger_event('core.search_modify_param_before', compact($vars)));
 
@@ -359,7 +389,7 @@ if ($keywords || $author || $author_id || $search_id || $submit)
 					WHERE t.topic_moved_id = 0
 						$last_post_time_sql
 						AND " . $m_approve_topics_fid_sql . '
-						' . ((sizeof($ex_fid_ary)) ? ' AND ' . $db->sql_in_set('t.forum_id', $ex_fid_ary, true) : '') . '
+						' . ((count($ex_fid_ary)) ? ' AND ' . $db->sql_in_set('t.forum_id', $ex_fid_ary, true) : '') . '
 					ORDER BY t.topic_last_post_time DESC';
 				$field = 'topic_id';
 			break;
@@ -397,7 +427,7 @@ if ($keywords || $author || $author_id || $search_id || $submit)
 							AND p.topic_id = t.topic_id
 							$last_post_time
 							AND $m_approve_posts_fid_sql
-							" . ((sizeof($ex_fid_ary)) ? ' AND ' . $db->sql_in_set('p.forum_id', $ex_fid_ary, true) : '') . "
+							" . ((count($ex_fid_ary)) ? ' AND ' . $db->sql_in_set('p.forum_id', $ex_fid_ary, true) : '') . "
 							$sql_sort";
 					$field = 'post_id';
 				}
@@ -410,7 +440,7 @@ if ($keywords || $author || $author_id || $search_id || $submit)
 							AND p.topic_id = t.topic_id
 							$last_post_time
 							AND $m_approve_topics_fid_sql
-							" . ((sizeof($ex_fid_ary)) ? ' AND ' . $db->sql_in_set('p.forum_id', $ex_fid_ary, true) : '') . "
+							" . ((count($ex_fid_ary)) ? ' AND ' . $db->sql_in_set('p.forum_id', $ex_fid_ary, true) : '') . "
 						$sql_sort";
 					$field = 'topic_id';
 				}
@@ -426,10 +456,12 @@ if ($keywords || $author || $author_id || $search_id || $submit)
 
 				$sql_where = 'AND t.topic_moved_id = 0
 					AND ' . $m_approve_topics_fid_sql . '
-					' . ((sizeof($ex_fid_ary)) ? 'AND ' . $db->sql_in_set('t.forum_id', $ex_fid_ary, true) : '');
+					' . ((count($ex_fid_ary)) ? 'AND ' . $db->sql_in_set('t.forum_id', $ex_fid_ary, true) : '');
 
 				gen_sort_selects($limit_days, $sort_by_text, $sort_days, $sort_key, $sort_dir, $s_limit_days, $s_sort_key, $s_sort_dir, $u_sort_param);
 				$s_sort_key = $s_sort_dir = $u_sort_param = $s_limit_days = '';
+
+				$template->assign_var('U_MARK_ALL_READ', ($user->data['is_registered'] || $config['load_anon_lastread']) ? append_sid("{$phpbb_root_path}index.$phpEx", 'hash=' . generate_link_hash('global') . '&amp;mark=forums&amp;mark_time=' . time()) : '');
 			break;
 
 			case 'newposts':
@@ -450,7 +482,7 @@ if ($keywords || $author || $author_id || $search_id || $submit)
 						FROM ' . POSTS_TABLE . ' p
 						WHERE p.post_time > ' . $user->data['user_lastvisit'] . '
 							AND ' . $m_approve_posts_fid_sql . '
-							' . ((sizeof($ex_fid_ary)) ? ' AND ' . $db->sql_in_set('p.forum_id', $ex_fid_ary, true) : '') . "
+							' . ((count($ex_fid_ary)) ? ' AND ' . $db->sql_in_set('p.forum_id', $ex_fid_ary, true) : '') . "
 						$sql_sort";
 					$field = 'post_id';
 				}
@@ -461,7 +493,7 @@ if ($keywords || $author || $author_id || $search_id || $submit)
 						WHERE t.topic_last_post_time > ' . $user->data['user_lastvisit'] . '
 							AND t.topic_moved_id = 0
 							AND ' . $m_approve_topics_fid_sql . '
-							' . ((sizeof($ex_fid_ary)) ? 'AND ' . $db->sql_in_set('t.forum_id', $ex_fid_ary, true) : '') . "
+							' . ((count($ex_fid_ary)) ? 'AND ' . $db->sql_in_set('t.forum_id', $ex_fid_ary, true) : '') . "
 						$sql_sort";
 /*
 		[Fix] queued replies missing from "view new posts" (Bug #42705 - Patch by Paul)
@@ -485,6 +517,24 @@ if ($keywords || $author || $author_id || $search_id || $submit)
 			break;
 		}
 	}
+
+	/**
+	* Event to modify data after pre-made searches
+	*
+	* @event core.search_modify_param_after
+	* @var	string	l_search_title	The title of the search page
+	* @var	string	search_id		Predefined search type name
+	* @var	string	show_results	Display topics or posts
+	* @var	string	sql				SQL query corresponding to the pre-made search id
+	* @since 3.1.7-RC1
+	*/
+	$vars = array(
+		'l_search_title',
+		'search_id',
+		'show_results',
+		'sql',
+	);
+	extract($phpbb_dispatcher->trigger_event('core.search_modify_param_after', compact($vars)));
 
 	// show_results should not change after this
 	$per_page = ($show_results == 'posts') ? $config['posts_per_page'] : $config['topics_per_page'];
@@ -517,7 +567,7 @@ if ($keywords || $author || $author_id || $search_id || $submit)
 			$search_id = '';
 		}
 
-		$total_match_count = sizeof($id_ary);
+		$total_match_count = count($id_ary);
 		if ($total_match_count)
 		{
 			// Limit the number to $total_matches_limit for pre-made searches
@@ -547,18 +597,60 @@ if ($keywords || $author || $author_id || $search_id || $submit)
 	{
 		$total_match_count = $search->keyword_search($show_results, $search_fields, $search_terms, $sort_by_sql, $sort_key, $sort_dir, $sort_days, $ex_fid_ary, $m_approve_posts_fid_sql, $topic_id, $author_id_ary, $sql_author_match, $id_ary, $start, $per_page);
 	}
-	else if (sizeof($author_id_ary))
+	else if (count($author_id_ary))
 	{
 		$firstpost_only = ($search_fields === 'firstpost' || $search_fields == 'titleonly') ? true : false;
 		$total_match_count = $search->author_search($show_results, $firstpost_only, $sort_by_sql, $sort_key, $sort_dir, $sort_days, $ex_fid_ary, $m_approve_posts_fid_sql, $topic_id, $author_id_ary, $sql_author_match, $id_ary, $start, $per_page);
 	}
 
+	/**
+	* Event to search otherwise than by keywords or author
+	*
+	* @event core.search_backend_search_after
+	* @var	string		show_results				'posts' or 'topics' type of ids
+	* @var	string		search_fields				The data fields to search in
+	* @var	string		search_terms				Is either 'all' (use query as entered, words without prefix should default to "have to be in field") or 'any' (ignore search query parts and just return all posts that contain any of the specified words)
+	* @var	array		sort_by_sql					Array of SQL sorting instructions
+	* @var	string		sort_key					The sort key
+	* @var	string		sort_dir					The sort direction
+	* @var	int			sort_days					Limit the age of results
+	* @var	array		ex_fid_ary					Array of excluded forum ids
+	* @var	string		m_approve_posts_fid_sql		Specifies which types of posts the user can view in which forums
+	* @var	int			topic_id					is set to 0 or a topic id, if it is not 0 then only posts in this topic should be searched
+	* @var	array		author_id_ary				Array of exclusive author ids
+	* @var	string		sql_author_match			Specifies the author match, when ANONYMOUS is also a search-match
+	* @var	array		id_ary						Array of post or topic ids for search result
+	* @var	int			start						The starting id of the results
+	* @var	int			per_page					Number of ids each page is supposed to contain
+	* @var	int			total_match_count			The total number of search matches
+	* @since 3.1.10-RC1
+	*/
+	$vars = array(
+		'show_results',
+		'search_fields',
+		'search_terms',
+		'sort_by_sql',
+		'sort_key',
+		'sort_dir',
+		'sort_days',
+		'ex_fid_ary',
+		'm_approve_posts_fid_sql',
+		'topic_id',
+		'author_id_ary',
+		'sql_author_match',
+		'id_ary',
+		'start',
+		'per_page',
+		'total_match_count',
+	);
+	extract($phpbb_dispatcher->trigger_event('core.search_backend_search_after', compact($vars)));
+
 	$sql_where = '';
 
-	if (sizeof($id_ary))
+	if (count($id_ary))
 	{
 		$sql_where .= $db->sql_in_set(($show_results == 'posts') ? 'p.post_id' : 't.topic_id', $id_ary);
-		$sql_where .= (sizeof($ex_fid_ary)) ? ' AND (' . $db->sql_in_set('f.forum_id', $ex_fid_ary, true) . ' OR f.forum_id IS NULL)' : '';
+		$sql_where .= (count($ex_fid_ary)) ? ' AND (' . $db->sql_in_set('f.forum_id', $ex_fid_ary, true) . ' OR f.forum_id IS NULL)' : '';
 		$sql_where .= ' AND ' . (($show_results == 'posts') ? $m_approve_posts_fid_sql : $m_approve_topics_fid_sql);
 	}
 
@@ -596,6 +688,30 @@ if ($keywords || $author || $author_id || $search_id || $submit)
 	$u_search .= (!$search_child) ? '&amp;sc=0' : '';
 	$u_search .= ($search_fields != 'all') ? '&amp;sf=' . $search_fields : '';
 	$u_search .= ($return_chars != 300) ? '&amp;ch=' . $return_chars : '';
+
+	/**
+	* Event to add or modify search URL parameters
+	*
+	* @event core.search_modify_url_parameters
+	* @var	string	u_search		Search URL parameters string
+	* @var	string	search_id		Predefined search type name
+	* @var	string	show_results	String indicating the show results mode
+	* @var	string	sql_where		The SQL WHERE string used by search to get topic data
+	* @var	int		total_match_count	The total number of search matches
+	* @var	array	ex_fid_ary		Array of excluded forum ids
+	* @since 3.1.7-RC1
+	* @changed 3.1.10-RC1 Added show_results, sql_where, total_match_count
+	* @changed 3.1.11-RC1 Added ex_fid_ary
+	*/
+	$vars = array(
+		'u_search',
+		'search_id',
+		'show_results',
+		'sql_where',
+		'total_match_count',
+		'ex_fid_ary',
+	);
+	extract($phpbb_dispatcher->trigger_event('core.search_modify_url_parameters', compact($vars)));
 
 	if ($sql_where)
 	{
@@ -707,6 +823,8 @@ if ($keywords || $author || $author_id || $search_id || $submit)
 				$tracking_topics = ($tracking_topics) ? tracking_unserialize($tracking_topics) : array();
 			}
 
+			$sql_order_by = $sort_by_sql[$sort_key] . ' ' . (($sort_dir == 'd') ? 'DESC' : 'ASC');
+
 			/**
 			* Event to modify the SQL query before the topic data is retrieved
 			*
@@ -715,21 +833,35 @@ if ($keywords || $author || $author_id || $search_id || $submit)
 			* @var	string	sql_from		The SQL FROM string used by search to get topic data
 			* @var	string	sql_where		The SQL WHERE string used by search to get topic data
 			* @var	int		total_match_count	The total number of search matches
+			* @var	array	sort_by_sql		Array of SQL sorting instructions
+			* @var	string	sort_dir		The sorting direction
+			* @var	string	sort_key		The sorting key
+			* @var	string	sql_order_by	The SQL ORDER BY string used by search to get topic data
 			* @since 3.1.0-a1
 			* @changed 3.1.0-RC5 Added total_match_count
+			* @changed 3.1.7-RC1 Added sort_by_sql, sort_dir, sort_key, sql_order_by
 			*/
-			$vars = array('sql_select', 'sql_from', 'sql_where', 'total_match_count');
+			$vars = array(
+				'sql_select',
+				'sql_from',
+				'sql_where',
+				'total_match_count',
+				'sort_by_sql',
+				'sort_dir',
+				'sort_key',
+				'sql_order_by',
+			);
 			extract($phpbb_dispatcher->trigger_event('core.search_get_topic_data', compact($vars)));
 
 			$sql = "SELECT $sql_select
 				FROM $sql_from
-				WHERE $sql_where";
-			$sql .= ' ORDER BY ' . $sort_by_sql[$sort_key] . ' ' . (($sort_dir == 'd') ? 'DESC' : 'ASC');
+				WHERE $sql_where
+				ORDER BY $sql_order_by";
 		}
 		$result = $db->sql_query($sql);
 		$result_topic_id = 0;
 
-		$rowset = array();
+		$rowset = $attachments = $topic_tracking_info = array();
 
 		if ($show_results == 'topics')
 		{
@@ -756,7 +888,7 @@ if ($keywords || $author || $author_id || $search_id || $submit)
 			$db->sql_freeresult($result);
 
 			// If we have some shadow topics, update the rowset to reflect their topic information
-			if (sizeof($shadow_topic_list))
+			if (count($shadow_topic_list))
 			{
 				$sql = 'SELECT *
 					FROM ' . TOPICS_TABLE . '
@@ -840,7 +972,7 @@ if ($keywords || $author || $author_id || $search_id || $submit)
 			unset($text_only_message);
 
 			// Pull attachment data
-			if (sizeof($attach_list))
+			if (count($attach_list))
 			{
 				$use_attach_list = $attach_list;
 				$attach_list = array();
@@ -854,7 +986,7 @@ if ($keywords || $author || $author_id || $search_id || $submit)
 				}
 			}
 
-			if (sizeof($attach_list))
+			if (count($attach_list))
 			{
 				$sql = 'SELECT *
 					FROM ' . ATTACHMENTS_TABLE . '
@@ -939,7 +1071,7 @@ if ($keywords || $author || $author_id || $search_id || $submit)
 				$u_mcp_queue = ($topic_unapproved || $posts_unapproved) ? append_sid("{$phpbb_root_path}mcp.$phpEx", 'i=queue&amp;mode=' . (($topic_unapproved) ? 'approve_details' : 'unapproved_posts') . "&amp;t=$result_topic_id", true, $user->session_id) : '';
 				$u_mcp_queue = (!$u_mcp_queue && $topic_deleted) ? append_sid("{$phpbb_root_path}mcp.$phpEx", "i=queue&amp;mode=deleted_topics&amp;t=$result_topic_id", true, $user->session_id) : $u_mcp_queue;
 
-				$row['topic_title'] = preg_replace('#(?!<.*)(?<!\w)(' . $hilit . ')(?!\w|[^<>]*(?:</s(?:cript|tyle))?>)#is', '<span class="posthilit">$1</span>', $row['topic_title']);
+				$row['topic_title'] = preg_replace('#(?!<.*)(?<!\w)(' . $hilit . ')(?!\w|[^<>]*(?:</s(?:cript|tyle))?>)#isu', '<span class="posthilit">$1</span>', $row['topic_title']);
 
 				$tpl_ary = array(
 					'TOPIC_AUTHOR'				=> get_username_string('username', $row['topic_poster'], $row['topic_first_poster_name'], $row['topic_first_poster_colour']),
@@ -1022,8 +1154,8 @@ if ($keywords || $author || $author_id || $search_id || $submit)
 				if ($hilit)
 				{
 					// post highlighting
-					$row['post_text'] = preg_replace('#(?!<.*)(?<!\w)(' . $hilit . ')(?!\w|[^<>]*(?:</s(?:cript|tyle))?>)#is', '<span class="posthilit">$1</span>', $row['post_text']);
-					$row['post_subject'] = preg_replace('#(?!<.*)(?<!\w)(' . $hilit . ')(?!\w|[^<>]*(?:</s(?:cript|tyle))?>)#is', '<span class="posthilit">$1</span>', $row['post_subject']);
+					$row['post_text'] = preg_replace('#(?!<.*)(?<!\w)(' . $hilit . ')(?!\w|[^<>]*(?:</s(?:cript|tyle))?>)#isu', '<span class="posthilit">$1</span>', $row['post_text']);
+					$row['post_subject'] = preg_replace('#(?!<.*)(?<!\w)(' . $hilit . ')(?!\w|[^<>]*(?:</s(?:cript|tyle))?>)#isu', '<span class="posthilit">$1</span>', $row['post_subject']);
 				}
 
 				$tpl_ary = array(
@@ -1170,14 +1302,25 @@ if ($keywords || $author || $author_id || $search_id || $submit)
 	* Modify the title and/or load data for the search results page
 	*
 	* @event core.search_results_modify_search_title
-	* @var	int		author_id		ID of the author to search by
-	* @var	string	l_search_title	The title of the search page
-	* @var	string	search_id		Predefined search type name
-	* @var	string	show_results	Search results output mode - topics or posts
-	* @var	int		start			The starting id of the results
+	* @var	int		author_id			ID of the author to search by
+	* @var	string	l_search_title		The title of the search page
+	* @var	string	search_id			Predefined search type name
+	* @var	string	show_results		Search results output mode - topics or posts
+	* @var	int		start				The starting id of the results
+	* @var	int		total_match_count	The count of search results
+	* @var	string	keywords			The search keywords
 	* @since 3.1.0-RC4
+	* @changed 3.1.6-RC1 Added total_match_count and keywords
 	*/
-	$vars = array('author_id', 'l_search_title', 'search_id', 'show_results', 'start');
+	$vars = array(
+		'author_id',
+		'l_search_title',
+		'search_id',
+		'show_results',
+		'start',
+		'total_match_count',
+		'keywords',
+	);
 	extract($phpbb_dispatcher->trigger_event('core.search_results_modify_search_title', compact($vars)));
 
 	page_header(($l_search_title) ? $l_search_title : $user->lang['SEARCH']);
@@ -1191,6 +1334,7 @@ if ($keywords || $author || $author_id || $search_id || $submit)
 }
 
 // Search forum
+$rowset = array();
 $s_forums = '';
 $sql = 'SELECT f.forum_id, f.forum_name, f.parent_id, f.forum_type, f.left_id, f.right_id, f.forum_password, f.enable_indexing, fa.user_id
 	FROM ' . FORUMS_TABLE . ' f
@@ -1199,11 +1343,27 @@ $sql = 'SELECT f.forum_id, f.forum_name, f.parent_id, f.forum_type, f.left_id, f
 	ORDER BY f.left_id ASC";
 $result = $db->sql_query($sql);
 
+while ($row = $db->sql_fetchrow($result))
+{
+	$rowset[(int) $row['forum_id']] = $row;
+}
+$db->sql_freeresult($result);
+
 $right = $cat_right = $padding_inc = 0;
 $padding = $forum_list = $holding = '';
 $pad_store = array('0' => '');
 
-while ($row = $db->sql_fetchrow($result))
+/**
+* Modify the forum select list for advanced search page
+*
+* @event core.search_modify_forum_select_list
+* @var	array	rowset	Array with the forums list data
+* @since 3.1.10-RC1
+*/
+$vars = array('rowset');
+extract($phpbb_dispatcher->trigger_event('core.search_modify_forum_select_list', compact($vars)));
+
+foreach ($rowset as $row)
 {
 	if ($row['forum_type'] == FORUM_CAT && ($row['left_id'] + 1 == $row['right_id']))
 	{
@@ -1275,8 +1435,8 @@ if ($holding)
 	$s_forums .= $holding;
 }
 
-$db->sql_freeresult($result);
 unset($pad_store);
+unset($rowset);
 
 if (!$s_forums)
 {
@@ -1335,7 +1495,6 @@ if ($auth->acl_get('a_search'))
 				ORDER BY search_time DESC';
 		break;
 
-		case 'mssql':
 		case 'mssql_odbc':
 		case 'mssqlnative':
 			$sql = 'SELECT search_time, search_keywords

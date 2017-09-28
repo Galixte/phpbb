@@ -37,6 +37,7 @@ if (!$auth->acl_gets('u_viewprofile', 'a_user', 'a_useradd', 'a_userdel'))
 {
 	if ($user->data['user_id'] != ANONYMOUS)
 	{
+		send_status_line(403, 'Forbidden');
 		trigger_error('NO_VIEW_USERS');
 	}
 
@@ -63,7 +64,10 @@ $order_by = $sort_key_sql[$sort_key] . ' ' . (($sort_dir == 'a') ? 'ASC' : 'DESC
 // Whois requested
 if ($mode == 'whois' && $auth->acl_get('a_') && $session_id)
 {
-	include($phpbb_root_path . 'includes/functions_user.' . $phpEx);
+	if (!function_exists('user_get_id_name'))
+	{
+		include($phpbb_root_path . 'includes/functions_user.' . $phpEx);
+	}
 
 	$sql = 'SELECT u.user_id, u.username, u.user_type, s.session_ip
 		FROM ' . USERS_TABLE . ' u, ' . SESSIONS_TABLE . " s
@@ -88,11 +92,29 @@ if ($mode == 'whois' && $auth->acl_get('a_') && $session_id)
 	page_footer();
 }
 
+$user->update_session_infos();
+
 // Forum info
-$sql = 'SELECT forum_id, forum_name, parent_id, forum_type, left_id, right_id
-	FROM ' . FORUMS_TABLE . '
-	ORDER BY left_id ASC';
-$result = $db->sql_query($sql, 600);
+$sql_ary = array(
+	'SELECT'	=> 'f.forum_id, f.forum_name, f.parent_id, f.forum_type, f.left_id, f.right_id',
+	'FROM'		=> array(
+		FORUMS_TABLE	=> 'f',
+	),
+	'ORDER_BY'	=> 'f.left_id ASC',
+);
+
+/**
+* Modify the forum data SQL query for getting additional fields if needed
+*
+* @event core.viewonline_modify_forum_data_sql
+* @var	array	sql_ary			The SQL array
+* @since 3.1.5-RC1
+*/
+$vars = array('sql_ary');
+extract($phpbb_dispatcher->trigger_event('core.viewonline_modify_forum_data_sql', compact($vars)));
+
+$result = $db->sql_query($db->sql_build_query('SELECT', $sql_ary), 600);
+unset($sql_ary);
 
 $forum_data = array();
 while ($row = $db->sql_fetchrow($result))
@@ -108,7 +130,6 @@ if (!$show_guests)
 {
 	switch ($db->get_sql_layer())
 	{
-		case 'sqlite':
 		case 'sqlite3':
 			$sql = 'SELECT COUNT(session_ip) as num_guests
 				FROM (
@@ -153,7 +174,7 @@ $sql_ary = array(
 * @var	int		guest_counter	Number of guests displayed
 * @var	array	forum_data		Array with forum data
 * @since 3.1.0-a1
-* @change 3.1.0-a2 Added vars guest_counter and forum_data
+* @changed 3.1.0-a2 Added vars guest_counter and forum_data
 */
 $vars = array('sql_ary', 'show_guests', 'guest_counter', 'forum_data');
 extract($phpbb_dispatcher->trigger_event('core.viewonline_modify_sql', compact($vars)));
@@ -166,6 +187,9 @@ $logged_visible_online = $logged_hidden_online = $counter = 0;
 /** @var \phpbb\controller\helper $controller_helper */
 $controller_helper = $phpbb_container->get('controller.helper');
 
+/** @var \phpbb\group\helper $group_helper */
+$group_helper = $phpbb_container->get('group_helper');
+
 while ($row = $db->sql_fetchrow($result))
 {
 	if ($row['user_id'] != ANONYMOUS && !isset($prev_id[$row['user_id']]))
@@ -177,7 +201,7 @@ while ($row = $db->sql_fetchrow($result))
 
 		if (!$row['session_viewonline'])
 		{
-			$view_online = ($auth->acl_get('u_viewonline')) ? true : false;
+			$view_online = ($auth->acl_get('u_viewonline') || $row['user_id'] === $user->data['user_id']) ? true : false;
 			$logged_hidden_online++;
 
 			$username_full = '<em>' . $username_full . '</em>';
@@ -360,7 +384,7 @@ while ($row = $db->sql_fetchrow($result))
 				$row['session_page'] === 'app.' . $phpEx . '/help/bbcode')
 			{
 				$location = $user->lang['VIEWING_FAQ'];
-				$location_url = $controller_helper->route('phpbb_help_controller', array('mode' => 'faq'));
+				$location_url = $controller_helper->route('phpbb_help_faq_controller');
 			}
 		break;
 	}
@@ -375,7 +399,7 @@ while ($row = $db->sql_fetchrow($result))
 	* @var	string	location_url	Page url to displayed in the list
 	* @var	array	forum_data		Array with forum data
 	* @since 3.1.0-a1
-	* @change 3.1.0-a2 Added var forum_data
+	* @changed 3.1.0-a2 Added var forum_data
 	*/
 	$vars = array('on_page', 'row', 'location', 'location_url', 'forum_data');
 	extract($phpbb_dispatcher->trigger_event('core.viewonline_overwrite_location', compact($vars)));
@@ -451,7 +475,7 @@ while ($row = $db->sql_fetchrow($result))
 	}
 	else
 	{
-		$legend .= (($legend != '') ? ', ' : '') . '<a style="color:#' . $row['group_colour'] . '" href="' . append_sid("{$phpbb_root_path}memberlist.$phpEx", 'mode=group&amp;g=' . $row['group_id']) . '">' . (($row['group_type'] == GROUP_SPECIAL) ? $user->lang['G_' . $row['group_name']] : $row['group_name']) . '</a>';
+		$legend .= (($legend != '') ? ', ' : '') . '<a style="color:#' . $row['group_colour'] . '" href="' . append_sid("{$phpbb_root_path}memberlist.$phpEx", 'mode=group&amp;g=' . $row['group_id']) . '">' . $group_helper->get_name($row['group_name']) . '</a>';
 	}
 }
 $db->sql_freeresult($result);
@@ -462,6 +486,11 @@ meta_refresh(60, append_sid("{$phpbb_root_path}viewonline.$phpEx", "sg=$show_gue
 $start = $pagination->validate_start($start, $config['topics_per_page'], $counter);
 $base_url = append_sid("{$phpbb_root_path}viewonline.$phpEx", "sg=$show_guests&amp;sk=$sort_key&amp;sd=$sort_dir");
 $pagination->generate_template_pagination($base_url, 'pagination', 'start', $counter, $config['topics_per_page'], $start);
+
+$template->assign_block_vars('navlinks', array(
+	'FORUM_NAME'	=> $user->lang('WHO_IS_ONLINE'),
+	'U_VIEW_FORUM'	=> append_sid("{$phpbb_root_path}viewonline.$phpEx"),
+));
 
 // Send data to template
 $template->assign_vars(array(

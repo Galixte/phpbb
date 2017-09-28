@@ -40,12 +40,13 @@ class tools implements tools_interface
 	*
 	* @return array
 	*/
-	public static function get_dbms_type_map()
+	static public function get_dbms_type_map()
 	{
 		return array(
 			'mysql_41'	=> array(
 				'INT:'		=> 'int(%d)',
 				'BINT'		=> 'bigint(20)',
+				'ULINT'		=> 'INT(10) UNSIGNED',
 				'UINT'		=> 'mediumint(8) UNSIGNED',
 				'UINT:'		=> 'int(%d) UNSIGNED',
 				'TINT:'		=> 'tinyint(%d)',
@@ -76,6 +77,7 @@ class tools implements tools_interface
 			'mysql_40'	=> array(
 				'INT:'		=> 'int(%d)',
 				'BINT'		=> 'bigint(20)',
+				'ULINT'		=> 'INT(10) UNSIGNED',
 				'UINT'		=> 'mediumint(8) UNSIGNED',
 				'UINT:'		=> 'int(%d) UNSIGNED',
 				'TINT:'		=> 'tinyint(%d)',
@@ -106,6 +108,7 @@ class tools implements tools_interface
 			'oracle'	=> array(
 				'INT:'		=> 'number(%d)',
 				'BINT'		=> 'number(20)',
+				'ULINT'		=> 'number(10)',
 				'UINT'		=> 'number(8)',
 				'UINT:'		=> 'number(%d)',
 				'TINT:'		=> 'number(%d)',
@@ -133,39 +136,10 @@ class tools implements tools_interface
 				'VARBINARY'	=> 'raw(255)',
 			),
 
-			'sqlite'	=> array(
-				'INT:'		=> 'int(%d)',
-				'BINT'		=> 'bigint(20)',
-				'UINT'		=> 'INTEGER UNSIGNED', //'mediumint(8) UNSIGNED',
-				'UINT:'		=> 'INTEGER UNSIGNED', // 'int(%d) UNSIGNED',
-				'TINT:'		=> 'tinyint(%d)',
-				'USINT'		=> 'INTEGER UNSIGNED', //'mediumint(4) UNSIGNED',
-				'BOOL'		=> 'INTEGER UNSIGNED', //'tinyint(1) UNSIGNED',
-				'VCHAR'		=> 'varchar(255)',
-				'VCHAR:'	=> 'varchar(%d)',
-				'CHAR:'		=> 'char(%d)',
-				'XSTEXT'	=> 'text(65535)',
-				'STEXT'		=> 'text(65535)',
-				'TEXT'		=> 'text(65535)',
-				'MTEXT'		=> 'mediumtext(16777215)',
-				'XSTEXT_UNI'=> 'text(65535)',
-				'STEXT_UNI'	=> 'text(65535)',
-				'TEXT_UNI'	=> 'text(65535)',
-				'MTEXT_UNI'	=> 'mediumtext(16777215)',
-				'TIMESTAMP'	=> 'INTEGER UNSIGNED', //'int(11) UNSIGNED',
-				'DECIMAL'	=> 'decimal(5,2)',
-				'DECIMAL:'	=> 'decimal(%d,2)',
-				'PDECIMAL'	=> 'decimal(6,3)',
-				'PDECIMAL:'	=> 'decimal(%d,3)',
-				'VCHAR_UNI'	=> 'varchar(255)',
-				'VCHAR_UNI:'=> 'varchar(%d)',
-				'VCHAR_CI'	=> 'varchar(255)',
-				'VARBINARY'	=> 'blob',
-			),
-
 			'sqlite3'	=> array(
 				'INT:'		=> 'INT(%d)',
 				'BINT'		=> 'BIGINT(20)',
+				'ULINT'		=> 'INTEGER UNSIGNED',
 				'UINT'		=> 'INTEGER UNSIGNED',
 				'UINT:'		=> 'INTEGER UNSIGNED',
 				'TINT:'		=> 'TINYINT(%d)',
@@ -199,7 +173,7 @@ class tools implements tools_interface
 	* A list of types being unsigned for better reference in some db's
 	* @var array
 	*/
-	var $unsigned_types = array('UINT', 'UINT:', 'USINT', 'BOOL', 'TIMESTAMP');
+	var $unsigned_types = array('ULINT', 'UINT', 'UINT:', 'USINT', 'BOOL', 'TIMESTAMP');
 
 	/**
 	* This is set to true if user only wants to return the 'to-be-executed' SQL statement(s) (as an array).
@@ -270,12 +244,6 @@ class tools implements tools_interface
 			case 'mysql4':
 			case 'mysqli':
 				$sql = 'SHOW TABLES';
-			break;
-
-			case 'sqlite':
-				$sql = 'SELECT name
-					FROM sqlite_master
-					WHERE type = "table"';
 			break;
 
 			case 'sqlite3':
@@ -393,7 +361,6 @@ class tools implements tools_interface
 				{
 					case 'mysql_40':
 					case 'mysql_41':
-					case 'sqlite':
 					case 'sqlite3':
 						$table_sql .= ",\n\t PRIMARY KEY (" . implode(', ', $table_data['PRIMARY_KEY']) . ')';
 					break;
@@ -415,7 +382,6 @@ class tools implements tools_interface
 			break;
 
 			case 'mysql_40':
-			case 'sqlite':
 			case 'sqlite3':
 				$table_sql .= "\n);";
 				$statements[] = $table_sql;
@@ -492,7 +458,7 @@ class tools implements tools_interface
 		$sqlite = false;
 
 		// For SQLite we need to perform the schema changes in a much more different way
-		if (($this->db->get_sql_layer() == 'sqlite' || $this->db->get_sql_layer() == 'sqlite3') && $this->return_statements)
+		if ($this->db->get_sql_layer() == 'sqlite3' && $this->return_statements)
 		{
 			$sqlite_data = array();
 			$sqlite = true;
@@ -879,7 +845,6 @@ class tools implements tools_interface
 					WHERE LOWER(table_name) = '" . strtolower($table_name) . "'";
 			break;
 
-			case 'sqlite':
 			case 'sqlite3':
 				$sql = "SELECT sql
 					FROM sqlite_master
@@ -962,7 +927,6 @@ class tools implements tools_interface
 				$col = 'index_name';
 			break;
 
-			case 'sqlite':
 			case 'sqlite3':
 				$sql = "PRAGMA index_list('" . $table_name . "');";
 				$col = 'name';
@@ -977,17 +941,19 @@ class tools implements tools_interface
 				continue;
 			}
 
-			// These DBMS prefix index name with the table name
 			switch ($this->sql_layer)
 			{
+				// These DBMS prefix index name with the table name
 				case 'oracle':
-				case 'sqlite':
 				case 'sqlite3':
-					$row[$col] = substr($row[$col], strlen($table_name) + 1);
+					$new_index_name = $this->check_index_name_length($table_name, $table_name . '_' . $index_name, false);
+				break;
+				default:
+					$new_index_name = $this->check_index_name_length($table_name, $index_name, false);
 				break;
 			}
 
-			if (strtolower($row[$col]) == strtolower($index_name))
+			if (strtolower($row[$col]) == strtolower($new_index_name))
 			{
 				$this->db->sql_freeresult($result);
 				return true;
@@ -1021,7 +987,6 @@ class tools implements tools_interface
 				$col = 'index_name';
 			break;
 
-			case 'sqlite':
 			case 'sqlite3':
 				$sql = "PRAGMA index_list('" . $table_name . "');";
 				$col = 'name';
@@ -1036,7 +1001,7 @@ class tools implements tools_interface
 				continue;
 			}
 
-			if (($this->sql_layer == 'sqlite' || $this->sql_layer == 'sqlite3') && !$row['unique'])
+			if ($this->sql_layer == 'sqlite3' && !$row['unique'])
 			{
 				continue;
 			}
@@ -1056,7 +1021,6 @@ class tools implements tools_interface
 					}
 				break;
 
-				case 'sqlite':
 				case 'sqlite3':
 					$row[$col] = substr($row[$col], strlen($table_name) + 1);
 				break;
@@ -1116,7 +1080,7 @@ class tools implements tools_interface
 		}
 
 		// Get type
-		list($column_type, $orig_column_type) = $this->get_column_type($column_data[0]);
+		list($column_type) = $this->get_column_type($column_data[0]);
 
 		// Adjust default value if db-dependent specified
 		if (is_array($column_data[1]))
@@ -1161,6 +1125,11 @@ class tools implements tools_interface
 					}
 				}
 
+				if (isset($column_data['after']))
+				{
+					$return_array['after'] = $column_data['after'];
+				}
+
 			break;
 
 			case 'oracle':
@@ -1183,18 +1152,12 @@ class tools implements tools_interface
 
 			break;
 
-			case 'sqlite':
 			case 'sqlite3':
 				$return_array['primary_key_set'] = false;
 				if (isset($column_data[2]) && $column_data[2] == 'auto_increment')
 				{
-					$sql .= ' INTEGER PRIMARY KEY';
+					$sql .= ' INTEGER PRIMARY KEY AUTOINCREMENT';
 					$return_array['primary_key_set'] = true;
-
-					if ($this->sql_layer === 'sqlite3')
-					{
-						$sql .= ' AUTOINCREMENT';
-					}
 				}
 				else
 				{
@@ -1296,57 +1259,6 @@ class tools implements tools_interface
 				$statements[] = 'ALTER TABLE ' . $table_name . ' ADD ' . $column_name . ' ' . $column_data['column_type_sql'];
 			break;
 
-			case 'sqlite':
-				if ($inline && $this->return_statements)
-				{
-					return $column_name . ' ' . $column_data['column_type_sql'];
-				}
-
-				$recreate_queries = $this->sqlite_get_recreate_table_queries($table_name);
-				if (empty($recreate_queries))
-				{
-					break;
-				}
-
-				$statements[] = 'begin';
-
-				$sql_create_table = array_shift($recreate_queries);
-
-				// Create a backup table and populate it, destroy the existing one
-				$statements[] = preg_replace('#CREATE\s+TABLE\s+"?' . $table_name . '"?#i', 'CREATE TEMPORARY TABLE ' . $table_name . '_temp', $sql_create_table);
-				$statements[] = 'INSERT INTO ' . $table_name . '_temp SELECT * FROM ' . $table_name;
-				$statements[] = 'DROP TABLE ' . $table_name;
-
-				preg_match('#\((.*)\)#s', $sql_create_table, $matches);
-
-				$new_table_cols = trim($matches[1]);
-				$old_table_cols = preg_split('/,(?![\s\w]+\))/m', $new_table_cols);
-				$column_list = array();
-
-				foreach ($old_table_cols as $declaration)
-				{
-					$entities = preg_split('#\s+#', trim($declaration));
-					if ($entities[0] == 'PRIMARY')
-					{
-						continue;
-					}
-					$column_list[] = $entities[0];
-				}
-
-				$columns = implode(',', $column_list);
-
-				$new_table_cols = $column_name . ' ' . $column_data['column_type_sql'] . ',' . $new_table_cols;
-
-				// create a new table and fill it up. destroy the temp one
-				$statements[] = 'CREATE TABLE ' . $table_name . ' (' . $new_table_cols . ');';
-				$statements = array_merge($statements, $recreate_queries);
-
-				$statements[] = 'INSERT INTO ' . $table_name . ' (' . $columns . ') SELECT ' . $columns . ' FROM ' . $table_name . '_temp;';
-				$statements[] = 'DROP TABLE ' . $table_name . '_temp';
-
-				$statements[] = 'commit';
-			break;
-
 			case 'sqlite3':
 				if ($inline && $this->return_statements)
 				{
@@ -1378,7 +1290,6 @@ class tools implements tools_interface
 				$statements[] = 'ALTER TABLE ' . $table_name . ' DROP COLUMN ' . $column_name;
 			break;
 
-			case 'sqlite':
 			case 'sqlite3':
 
 				if ($inline && $this->return_statements)
@@ -1451,13 +1362,14 @@ class tools implements tools_interface
 		{
 			case 'mysql_40':
 			case 'mysql_41':
+				$index_name = $this->check_index_name_length($table_name, $index_name, false);
 				$statements[] = 'DROP INDEX ' . $index_name . ' ON ' . $table_name;
 			break;
 
 			case 'oracle':
-			case 'sqlite':
 			case 'sqlite3':
-				$statements[] = 'DROP INDEX ' . $table_name . '_' . $index_name;
+				$index_name = $this->check_index_name_length($table_name, $table_name . '_' . $index_name, false);
+				$statements[] = 'DROP INDEX ' . $index_name;
 			break;
 		}
 
@@ -1519,7 +1431,6 @@ class tools implements tools_interface
 				$statements[] = 'ALTER TABLE ' . $table_name . ' add CONSTRAINT pk_' . $table_name . ' PRIMARY KEY (' . implode(', ', $column) . ')';
 			break;
 
-			case 'sqlite':
 			case 'sqlite3':
 
 				if ($inline && $this->return_statements)
@@ -1581,18 +1492,17 @@ class tools implements tools_interface
 	{
 		$statements = array();
 
-		$this->check_index_name_length($table_name, $index_name);
-
 		switch ($this->sql_layer)
 		{
 			case 'oracle':
-			case 'sqlite':
 			case 'sqlite3':
-				$statements[] = 'CREATE UNIQUE INDEX ' . $table_name . '_' . $index_name . ' ON ' . $table_name . '(' . implode(', ', $column) . ')';
+				$index_name = $this->check_index_name_length($table_name, $table_name . '_' . $index_name);
+				$statements[] = 'CREATE UNIQUE INDEX ' . $index_name . ' ON ' . $table_name . '(' . implode(', ', $column) . ')';
 			break;
 
 			case 'mysql_40':
 			case 'mysql_41':
+				$index_name = $this->check_index_name_length($table_name, $index_name);
 				$statements[] = 'ALTER TABLE ' . $table_name . ' ADD UNIQUE INDEX ' . $index_name . '(' . implode(', ', $column) . ')';
 			break;
 		}
@@ -1607,8 +1517,6 @@ class tools implements tools_interface
 	{
 		$statements = array();
 
-		$this->check_index_name_length($table_name, $index_name);
-
 		// remove index length unless MySQL4
 		if ('mysql_40' != $this->sql_layer)
 		{
@@ -1618,9 +1526,9 @@ class tools implements tools_interface
 		switch ($this->sql_layer)
 		{
 			case 'oracle':
-			case 'sqlite':
 			case 'sqlite3':
-				$statements[] = 'CREATE INDEX ' . $table_name . '_' . $index_name . ' ON ' . $table_name . '(' . implode(', ', $column) . ')';
+				$index_name = $this->check_index_name_length($table_name, $table_name . '_' . $index_name);
+				$statements[] = 'CREATE INDEX ' . $index_name . ' ON ' . $table_name . '(' . implode(', ', $column) . ')';
 			break;
 
 			case 'mysql_40':
@@ -1635,6 +1543,7 @@ class tools implements tools_interface
 				}
 			// no break
 			case 'mysql_41':
+				$index_name = $this->check_index_name_length($table_name, $index_name);
 				$statements[] = 'ALTER TABLE ' . $table_name . ' ADD INDEX ' . $index_name . ' (' . implode(', ', $column) . ')';
 			break;
 		}
@@ -1647,15 +1556,37 @@ class tools implements tools_interface
 	 *
 	 * @param string $table_name
 	 * @param string $index_name
+	 * @param bool $throw_error
+	 * @return string	The index name, shortened if too long
 	 */
-	protected function check_index_name_length($table_name, $index_name)
+	protected function check_index_name_length($table_name, $index_name, $throw_error = true)
 	{
-		$table_prefix = substr(CONFIG_TABLE, 0, -6); // strlen(config)
-		if (strlen($table_name . $index_name) - strlen($table_prefix) > 24)
+		if (strlen($index_name) > 30)
 		{
-			$max_length = strlen($table_prefix) + 24;
-			trigger_error("Index name '{$table_name}_$index_name' on table '$table_name' is too long. The maximum is $max_length characters.", E_USER_ERROR);
+			// Try removing the table prefix if it's at the beginning
+			$table_prefix = substr(CONFIG_TABLE, 0, -6); // strlen(config)
+			if (strpos($index_name, $table_prefix) === 0)
+			{
+				$index_name = substr($index_name, strlen($table_prefix));
+				return $this->check_index_name_length($table_name, $index_name, $throw_error);
+			}
+
+			// Try removing the remaining suffix part of table name then
+			$table_suffix = substr($table_name, strlen($table_prefix));
+			if (strpos($index_name, $table_suffix) === 0)
+			{
+				// Remove the suffix and underscore separator between table_name and index_name
+				$index_name = substr($index_name, strlen($table_suffix) + 1);
+				return $this->check_index_name_length($table_name, $index_name, $throw_error);
+			}
+
+			if ($throw_error)
+			{
+				trigger_error("Index name '$index_name' on table '$table_name' is too long. The maximum is 30 characters.", E_USER_ERROR);
+			}
 		}
+
+		return $index_name;
 	}
 
 	/**
@@ -1683,7 +1614,6 @@ class tools implements tools_interface
 				$col = 'index_name';
 				break;
 
-			case 'sqlite':
 			case 'sqlite3':
 				$sql = "PRAGMA index_info('" . $table_name . "');";
 				$col = 'name';
@@ -1701,7 +1631,6 @@ class tools implements tools_interface
 			switch ($this->sql_layer)
 			{
 				case 'oracle':
-				case 'sqlite':
 				case 'sqlite3':
 					$row[$col] = substr($row[$col], strlen($table_name) + 1);
 					break;
@@ -1808,7 +1737,6 @@ class tools implements tools_interface
 				$this->return_statements = $old_return_statements;
 			break;
 
-			case 'sqlite':
 			case 'sqlite3':
 
 				if ($inline && $this->return_statements)
@@ -1889,7 +1817,6 @@ class tools implements tools_interface
 		{
 			case 'mysql_40':
 			case 'mysql_41':
-			case 'sqlite':
 			case 'sqlite3':
 				// Not supported
 				throw new \Exception('DBMS is not supported');

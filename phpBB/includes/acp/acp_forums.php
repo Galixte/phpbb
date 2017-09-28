@@ -27,7 +27,7 @@ class acp_forums
 	function main($id, $mode)
 	{
 		global $db, $user, $auth, $template, $cache, $request, $phpbb_dispatcher;
-		global $config, $phpbb_admin_path, $phpbb_root_path, $phpEx, $phpbb_log;
+		global $phpbb_admin_path, $phpbb_root_path, $phpEx, $phpbb_log;
 
 		$user->add_lang('acp/forums');
 		$this->tpl_name = 'acp_forums';
@@ -90,7 +90,7 @@ class acp_forums
 
 					$errors = $this->delete_forum($forum_id, $action_posts, $action_subforums, $posts_to_id, $subforums_to_id);
 
-					if (sizeof($errors))
+					if (count($errors))
 					{
 						break;
 					}
@@ -198,7 +198,7 @@ class acp_forums
 
 					$errors = $this->update_forum_data($forum_data);
 
-					if (!sizeof($errors))
+					if (!count($errors))
 					{
 						$forum_perm_from = $request->variable('forum_perm_from', 0);
 						$cache->destroy('sql', FORUMS_TABLE);
@@ -622,7 +622,7 @@ class acp_forums
 
 				$template_data = array(
 					'S_EDIT_FORUM'		=> true,
-					'S_ERROR'			=> (sizeof($errors)) ? true : false,
+					'S_ERROR'			=> (count($errors)) ? true : false,
 					'S_PARENT_ID'		=> $this->parent_id,
 					'S_FORUM_PARENT_ID'	=> $forum_data['parent_id'],
 					'S_ADD_ACTION'		=> ($action == 'add') ? true : false,
@@ -632,7 +632,7 @@ class acp_forums
 
 					'L_COPY_PERMISSIONS_EXPLAIN'	=> $user->lang['COPY_PERMISSIONS_' . strtoupper($action) . '_EXPLAIN'],
 					'L_TITLE'						=> $user->lang[$this->page_title],
-					'ERROR_MSG'						=> (sizeof($errors)) ? implode('<br />', $errors) : '',
+					'ERROR_MSG'						=> (count($errors)) ? implode('<br />', $errors) : '',
 
 					'FORUM_NAME'				=> $forum_data['forum_name'],
 					'FORUM_DATA_LINK'			=> $forum_data['forum_link'],
@@ -772,8 +772,8 @@ class acp_forums
 					'S_FORUM_LINK'			=> ($forum_data['forum_type'] == FORUM_LINK) ? true : false,
 					'S_HAS_SUBFORUMS'		=> ($forum_data['right_id'] - $forum_data['left_id'] > 1) ? true : false,
 					'S_FORUMS_LIST'			=> $forums_list,
-					'S_ERROR'				=> (sizeof($errors)) ? true : false,
-					'ERROR_MSG'				=> (sizeof($errors)) ? implode('<br />', $errors) : '')
+					'S_ERROR'				=> (count($errors)) ? true : false,
+					'ERROR_MSG'				=> (count($errors)) ? implode('<br />', $errors) : '')
 				);
 
 				return;
@@ -843,9 +843,26 @@ class acp_forums
 			ORDER BY left_id";
 		$result = $db->sql_query($sql);
 
-		if ($row = $db->sql_fetchrow($result))
+		$rowset = array();
+		while ($row = $db->sql_fetchrow($result))
 		{
-			do
+			$rowset[(int) $row['forum_id']] = $row;
+		}
+		$db->sql_freeresult($result);
+
+		/**
+		* Modify the forum list data
+		*
+		* @event core.acp_manage_forums_modify_forum_list
+		* @var	array	rowset	Array with the forums list data
+		* @since 3.1.10-RC1
+		*/
+		$vars = array('rowset');
+		extract($phpbb_dispatcher->trigger_event('core.acp_manage_forums_modify_forum_list', compact($vars)));
+
+		if (!empty($rowset))
+		{
+			foreach ($rowset as $row)
 			{
 				$forum_type = $row['forum_type'];
 
@@ -889,7 +906,6 @@ class acp_forums
 					'U_SYNC'			=> $url . '&amp;action=sync')
 				);
 			}
-			while ($row = $db->sql_fetchrow($result));
 		}
 		else if ($this->parent_id)
 		{
@@ -905,10 +921,10 @@ class acp_forums
 				'U_SYNC'			=> $url . '&amp;action=sync')
 			);
 		}
-		$db->sql_freeresult($result);
+		unset($rowset);
 
 		$template->assign_vars(array(
-			'ERROR_MSG'		=> (sizeof($errors)) ? implode('<br />', $errors) : '',
+			'ERROR_MSG'		=> (count($errors)) ? implode('<br />', $errors) : '',
 			'NAVIGATION'	=> $navigation,
 			'FORUM_BOX'		=> $forum_box,
 			'U_SEL_ACTION'	=> $this->u_action,
@@ -944,12 +960,13 @@ class acp_forums
 	/**
 	* Update forum data
 	*/
-	function update_forum_data(&$forum_data)
+	function update_forum_data(&$forum_data_ary)
 	{
 		global $db, $user, $cache, $phpbb_root_path, $phpbb_container, $phpbb_dispatcher, $phpbb_log, $request;
 
 		$errors = array();
 
+		$forum_data = $forum_data_ary;
 		/**
 		* Validate the forum data before we create/update the forum
 		*
@@ -961,42 +978,44 @@ class acp_forums
 		*/
 		$vars = array('forum_data', 'errors');
 		extract($phpbb_dispatcher->trigger_event('core.acp_manage_forums_validate_data', compact($vars)));
+		$forum_data_ary = $forum_data;
+		unset($forum_data);
 
-		if ($forum_data['forum_name'] == '')
+		if ($forum_data_ary['forum_name'] == '')
 		{
 			$errors[] = $user->lang['FORUM_NAME_EMPTY'];
 		}
 
-		if (utf8_strlen($forum_data['forum_desc']) > 4000)
+		if (utf8_strlen($forum_data_ary['forum_desc']) > 4000)
 		{
 			$errors[] = $user->lang['FORUM_DESC_TOO_LONG'];
 		}
 
-		if (utf8_strlen($forum_data['forum_rules']) > 4000)
+		if (utf8_strlen($forum_data_ary['forum_rules']) > 4000)
 		{
 			$errors[] = $user->lang['FORUM_RULES_TOO_LONG'];
 		}
 
-		if ($forum_data['forum_password'] || $forum_data['forum_password_confirm'])
+		if ($forum_data_ary['forum_password'] || $forum_data_ary['forum_password_confirm'])
 		{
-			if ($forum_data['forum_password'] != $forum_data['forum_password_confirm'])
+			if ($forum_data_ary['forum_password'] != $forum_data_ary['forum_password_confirm'])
 			{
-				$forum_data['forum_password'] = $forum_data['forum_password_confirm'] = '';
+				$forum_data_ary['forum_password'] = $forum_data_ary['forum_password_confirm'] = '';
 				$errors[] = $user->lang['FORUM_PASSWORD_MISMATCH'];
 			}
 		}
 
-		if ($forum_data['prune_days'] < 0 || $forum_data['prune_viewed'] < 0 || $forum_data['prune_freq'] < 0)
+		if ($forum_data_ary['prune_days'] < 0 || $forum_data_ary['prune_viewed'] < 0 || $forum_data_ary['prune_freq'] < 0)
 		{
-			$forum_data['prune_days'] = $forum_data['prune_viewed'] = $forum_data['prune_freq'] = 0;
+			$forum_data_ary['prune_days'] = $forum_data_ary['prune_viewed'] = $forum_data_ary['prune_freq'] = 0;
 			$errors[] = $user->lang['FORUM_DATA_NEGATIVE'];
 		}
 
 		$range_test_ary = array(
-			array('lang' => 'FORUM_TOPICS_PAGE', 'value' => $forum_data['forum_topics_per_page'], 'column_type' => 'TINT:0'),
+			array('lang' => 'FORUM_TOPICS_PAGE', 'value' => $forum_data_ary['forum_topics_per_page'], 'column_type' => 'TINT:0'),
 		);
 
-		if (!empty($forum_data['forum_image']) && !file_exists($phpbb_root_path . $forum_data['forum_image']))
+		if (!empty($forum_data_ary['forum_image']) && !file_exists($phpbb_root_path . $forum_data_ary['forum_image']))
 		{
 			$errors[] = $user->lang['FORUM_IMAGE_NO_EXIST'];
 		}
@@ -1010,17 +1029,17 @@ class acp_forums
 		// 8 = prune stickies
 		// 16 = show active topics
 		// 32 = enable post review
-		$forum_data['forum_flags'] = 0;
-		$forum_data['forum_flags'] += ($forum_data['forum_link_track']) ? FORUM_FLAG_LINK_TRACK : 0;
-		$forum_data['forum_flags'] += ($forum_data['prune_old_polls']) ? FORUM_FLAG_PRUNE_POLL : 0;
-		$forum_data['forum_flags'] += ($forum_data['prune_announce']) ? FORUM_FLAG_PRUNE_ANNOUNCE : 0;
-		$forum_data['forum_flags'] += ($forum_data['prune_sticky']) ? FORUM_FLAG_PRUNE_STICKY : 0;
-		$forum_data['forum_flags'] += ($forum_data['show_active']) ? FORUM_FLAG_ACTIVE_TOPICS : 0;
-		$forum_data['forum_flags'] += ($forum_data['enable_post_review']) ? FORUM_FLAG_POST_REVIEW : 0;
-		$forum_data['forum_flags'] += ($forum_data['enable_quick_reply']) ? FORUM_FLAG_QUICK_REPLY : 0;
+		$forum_data_ary['forum_flags'] = 0;
+		$forum_data_ary['forum_flags'] += ($forum_data_ary['forum_link_track']) ? FORUM_FLAG_LINK_TRACK : 0;
+		$forum_data_ary['forum_flags'] += ($forum_data_ary['prune_old_polls']) ? FORUM_FLAG_PRUNE_POLL : 0;
+		$forum_data_ary['forum_flags'] += ($forum_data_ary['prune_announce']) ? FORUM_FLAG_PRUNE_ANNOUNCE : 0;
+		$forum_data_ary['forum_flags'] += ($forum_data_ary['prune_sticky']) ? FORUM_FLAG_PRUNE_STICKY : 0;
+		$forum_data_ary['forum_flags'] += ($forum_data_ary['show_active']) ? FORUM_FLAG_ACTIVE_TOPICS : 0;
+		$forum_data_ary['forum_flags'] += ($forum_data_ary['enable_post_review']) ? FORUM_FLAG_POST_REVIEW : 0;
+		$forum_data_ary['forum_flags'] += ($forum_data_ary['enable_quick_reply']) ? FORUM_FLAG_QUICK_REPLY : 0;
 
 		// Unset data that are not database fields
-		$forum_data_sql = $forum_data;
+		$forum_data_sql = $forum_data_ary;
 
 		unset($forum_data_sql['forum_link_track']);
 		unset($forum_data_sql['prune_old_polls']);
@@ -1034,7 +1053,7 @@ class acp_forums
 		// What are we going to do tonight Brain? The same thing we do everynight,
 		// try to take over the world ... or decide whether to continue update
 		// and if so, whether it's a new forum/cat/link or an existing one
-		if (sizeof($errors))
+		if (count($errors))
 		{
 			return $errors;
 		}
@@ -1058,6 +1077,7 @@ class acp_forums
 		}
 		unset($forum_data_sql['forum_password_unset']);
 
+		$forum_data = $forum_data_ary;
 		/**
 		* Remove invalid values from forum_data_sql that should not be updated
 		*
@@ -1070,6 +1090,8 @@ class acp_forums
 		*/
 		$vars = array('forum_data', 'forum_data_sql');
 		extract($phpbb_dispatcher->trigger_event('core.acp_manage_forums_update_data_before', compact($vars)));
+		$forum_data_ary = $forum_data;
+		unset($forum_data);
 
 		$is_new_forum = !isset($forum_data_sql['forum_id']);
 
@@ -1126,9 +1148,9 @@ class acp_forums
 			$sql = 'INSERT INTO ' . FORUMS_TABLE . ' ' . $db->sql_build_array('INSERT', $forum_data_sql);
 			$db->sql_query($sql);
 
-			$forum_data['forum_id'] = $db->sql_nextid();
+			$forum_data_ary['forum_id'] = $db->sql_nextid();
 
-			$phpbb_log->add('admin', $user->data['user_id'], $user->ip, 'LOG_FORUM_ADD', false, array($forum_data['forum_name']));
+			$phpbb_log->add('admin', $user->data['user_id'], $user->ip, 'LOG_FORUM_ADD', false, array($forum_data_ary['forum_name']));
 		}
 		else
 		{
@@ -1195,12 +1217,12 @@ class acp_forums
 							$errors = array_merge($errors, $this->delete_forum_content($_row['forum_id']));
 						}
 
-						if (sizeof($errors))
+						if (count($errors))
 						{
 							return $errors;
 						}
 
-						if (sizeof($forum_ids))
+						if (count($forum_ids))
 						{
 							$sql = 'DELETE FROM ' . FORUMS_TABLE . '
 								WHERE ' . $db->sql_in_set('forum_id', $forum_ids);
@@ -1230,7 +1252,7 @@ class acp_forums
 								$allowed_forums = array_diff($allowed_forums, $forum_ids);
 
 								$sql = 'UPDATE ' . EXTENSION_GROUPS_TABLE . "
-									SET allowed_forums = '" . ((sizeof($allowed_forums)) ? serialize($allowed_forums) : '') . "'
+									SET allowed_forums = '" . ((count($allowed_forums)) ? serialize($allowed_forums) : '') . "'
 									WHERE group_id = {$_row['group_id']}";
 								$db->sql_query($sql);
 							}
@@ -1257,8 +1279,6 @@ class acp_forums
 						{
 							return array($user->lang['NO_FORUM']);
 						}
-
-						$subforums_to_name = $_row['forum_name'];
 
 						$sql = 'SELECT forum_id
 							FROM ' . FORUMS_TABLE . "
@@ -1301,7 +1321,7 @@ class acp_forums
 				$forum_data_sql['forum_last_poster_colour'] = '';
 			}
 
-			if (sizeof($errors))
+			if (count($errors))
 			{
 				return $errors;
 			}
@@ -1318,7 +1338,7 @@ class acp_forums
 				}
 			}
 
-			if (sizeof($errors))
+			if (count($errors))
 			{
 				return $errors;
 			}
@@ -1343,11 +1363,12 @@ class acp_forums
 			$db->sql_query($sql);
 
 			// Add it back
-			$forum_data['forum_id'] = $forum_id;
+			$forum_data_ary['forum_id'] = $forum_id;
 
-			$phpbb_log->add('admin', $user->data['user_id'], $user->ip, 'LOG_FORUM_EDIT', false, array($forum_data['forum_name']));
+			$phpbb_log->add('admin', $user->data['user_id'], $user->ip, 'LOG_FORUM_EDIT', false, array($forum_data_ary['forum_name']));
 		}
 
+		$forum_data = $forum_data_ary;
 		/**
 		* Event after a forum was updated or created
 		*
@@ -1363,6 +1384,8 @@ class acp_forums
 		*/
 		$vars = array('forum_data', 'forum_data_sql', 'is_new_forum', 'errors');
 		extract($phpbb_dispatcher->trigger_event('core.acp_manage_forums_update_data_after', compact($vars)));
+		$forum_data_ary = $forum_data;
+		unset($forum_data);
 
 		return $errors;
 	}
@@ -1374,7 +1397,7 @@ class acp_forums
 	{
 		global $db, $user, $phpbb_dispatcher;
 
-		$to_data = $moved_ids = $errors = array();
+		$errors = array();
 
 		// Check if we want to move to a parent with link type
 		if ($to_id > 0)
@@ -1410,10 +1433,10 @@ class acp_forums
 
 		$moved_forums = get_forum_branch($from_id, 'children', 'descending');
 		$from_data = $moved_forums[0];
-		$diff = sizeof($moved_forums) * 2;
+		$diff = count($moved_forums) * 2;
 
 		$moved_ids = array();
-		for ($i = 0; $i < sizeof($moved_forums); ++$i)
+		for ($i = 0, $size = count($moved_forums); $i < $size; ++$i)
 		{
 			$moved_ids[] = $moved_forums[$i]['forum_id'];
 		}
@@ -1589,7 +1612,7 @@ class acp_forums
 			}
 		}
 
-		if (sizeof($errors))
+		if (count($errors))
 		{
 			return $errors;
 		}
@@ -1605,12 +1628,12 @@ class acp_forums
 				$errors = array_merge($errors, $this->delete_forum_content($row['forum_id']));
 			}
 
-			if (sizeof($errors))
+			if (count($errors))
 			{
 				return $errors;
 			}
 
-			$diff = sizeof($forum_ids) * 2;
+			$diff = count($forum_ids) * 2;
 
 			$sql = 'DELETE FROM ' . FORUMS_TABLE . '
 				WHERE ' . $db->sql_in_set('forum_id', $forum_ids);
@@ -1683,7 +1706,7 @@ class acp_forums
 				}
 			}
 
-			if (sizeof($errors))
+			if (count($errors))
 			{
 				return $errors;
 			}
@@ -1731,7 +1754,7 @@ class acp_forums
 			$allowed_forums = array_diff($allowed_forums, $forum_ids);
 
 			$sql = 'UPDATE ' . EXTENSION_GROUPS_TABLE . "
-				SET allowed_forums = '" . ((sizeof($allowed_forums)) ? serialize($allowed_forums) : '') . "'
+				SET allowed_forums = '" . ((count($allowed_forums)) ? serialize($allowed_forums) : '') . "'
 				WHERE group_id = {$row['group_id']}";
 			$db->sql_query($sql);
 		}
@@ -1788,7 +1811,7 @@ class acp_forums
 	*/
 	function delete_forum_content($forum_id)
 	{
-		global $db, $config, $phpbb_root_path, $phpEx;
+		global $db, $config, $phpbb_root_path, $phpEx, $phpbb_container, $phpbb_dispatcher;
 
 		include_once($phpbb_root_path . 'includes/functions_posting.' . $phpEx);
 
@@ -1809,7 +1832,10 @@ class acp_forums
 		}
 		$db->sql_freeresult($result);
 
-		delete_attachments('topic', $topic_ids, false);
+		/** @var \phpbb\attachment\manager $attachment_manager */
+		$attachment_manager = $phpbb_container->get('attachment.manager');
+		$attachment_manager->delete('topic', $topic_ids, false);
+		unset($attachment_manager);
 
 		// Delete shadow topics pointing to topics in this forum
 		delete_topic_shadows($forum_id);
@@ -1901,9 +1927,9 @@ class acp_forums
 						}
 						$db->sql_freeresult($result);
 
-						if (sizeof($ids))
+						if (count($ids))
 						{
-							$start += sizeof($ids);
+							$start += count($ids);
 
 							foreach ($tables as $table)
 							{
@@ -1911,7 +1937,7 @@ class acp_forums
 							}
 						}
 					}
-					while (sizeof($ids) == $batch_size);
+					while (count($ids) == $batch_size);
 				}
 				unset($ids);
 
@@ -1919,6 +1945,24 @@ class acp_forums
 		}
 
 		$table_ary = array(FORUMS_ACCESS_TABLE, FORUMS_TRACK_TABLE, FORUMS_WATCH_TABLE, LOG_TABLE, MODERATOR_CACHE_TABLE, POSTS_TABLE, TOPICS_TABLE, TOPICS_TRACK_TABLE);
+
+		/**
+		 * Perform additional actions before forum content deletion
+		 *
+		 * @event core.delete_forum_content_before_query
+		 * @var	array	table_ary	Array of tables from which all rows will be deleted that hold the forum_id
+		 * @var	int		forum_id	the forum id
+		 * @var	array	topic_ids	Array of the topic ids from the forum to be deleted
+		 * @var	array	post_counts	Array of counts of posts in the forum, by poster_id
+		 * @since 3.1.6-RC1
+		 */
+		$vars = array(
+				'table_ary',
+				'forum_id',
+				'topic_ids',
+				'post_counts',
+		);
+		extract($phpbb_dispatcher->trigger_event('core.delete_forum_content_before_query', compact($vars)));
 
 		foreach ($table_ary as $table)
 		{
@@ -1934,7 +1978,7 @@ class acp_forums
 		}
 
 		// Adjust users post counts
-		if (sizeof($post_counts))
+		if (count($post_counts))
 		{
 			foreach ($post_counts as $poster_id => $substract)
 			{
@@ -2018,7 +2062,7 @@ class acp_forums
 		}
 		$db->sql_freeresult($result);
 
-		if (!sizeof($target))
+		if (!count($target))
 		{
 			// The forum is already on top or bottom
 			return false;

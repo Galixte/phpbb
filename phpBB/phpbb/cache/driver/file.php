@@ -21,15 +21,21 @@ class file extends \phpbb\cache\driver\base
 	var $var_expires = array();
 
 	/**
+	 * @var	\phpbb\filesystem\filesystem_interface
+	 */
+	protected $filesystem;
+
+	/**
 	* Set cache path
 	*
 	* @param string $cache_dir Define the path to the cache directory (default: $phpbb_root_path . 'cache/')
 	*/
 	function __construct($cache_dir = null)
 	{
-		global $phpbb_root_path, $phpbb_container;
+		global $phpbb_container;
 
-		$this->cache_dir = !is_null($cache_dir) ? $cache_dir : $phpbb_root_path . 'cache/' . $phpbb_container->getParameter('core.environment') . '/';
+		$this->cache_dir = !is_null($cache_dir) ? $cache_dir : $phpbb_container->getParameter('core.cache_dir');
+		$this->filesystem = new \phpbb\filesystem\filesystem();
 
 		if (!is_dir($this->cache_dir))
 		{
@@ -69,14 +75,8 @@ class file extends \phpbb\cache\driver\base
 
 		if (!$this->_write('data_global'))
 		{
-			if (!function_exists('phpbb_is_writable'))
-			{
-				global $phpbb_root_path;
-				include($phpbb_root_path . 'includes/functions.' . $phpEx);
-			}
-
 			// Now, this occurred how often? ... phew, just tell the user then...
-			if (!phpbb_is_writable($this->cache_dir))
+			if (!$this->filesystem->is_writable($this->cache_dir))
 			{
 				// We need to use die() here, because else we may encounter an infinite loop (the message handler calls $cache->unload())
 				die('Fatal: ' . $this->cache_dir . ' is NOT writable.');
@@ -135,7 +135,7 @@ class file extends \phpbb\cache\driver\base
 
 		if (file_exists($this->cache_dir . 'data_global.' . $phpEx))
 		{
-			if (!sizeof($this->vars))
+			if (!count($this->vars))
 			{
 				$this->load();
 			}
@@ -290,7 +290,7 @@ class file extends \phpbb\cache\driver\base
 		}
 		else
 		{
-			if (!sizeof($this->vars))
+			if (!count($this->vars))
 			{
 				$this->load();
 			}
@@ -574,13 +574,19 @@ class file extends \phpbb\cache\driver\base
 
 			fclose($handle);
 
-			if (!function_exists('phpbb_chmod'))
+			if (function_exists('opcache_invalidate'))
 			{
-				global $phpbb_root_path;
-				include($phpbb_root_path . 'includes/functions.' . $phpEx);
+				@opcache_invalidate($file);
 			}
 
-			phpbb_chmod($file, CHMOD_READ | CHMOD_WRITE);
+			try
+			{
+				$this->filesystem->phpbb_chmod($file, CHMOD_READ | CHMOD_WRITE);
+			}
+			catch (\phpbb\filesystem\exception\filesystem_exception $e)
+			{
+				// Do nothing
+			}
 
 			$return_value = true;
 		}
@@ -602,6 +608,6 @@ class file extends \phpbb\cache\driver\base
 	*/
 	protected function clean_varname($varname)
 	{
-		return str_replace('/', '-', $varname);
+		return str_replace(array('/', '\\'), '-', $varname);
 	}
 }

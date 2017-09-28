@@ -155,7 +155,6 @@ class phpbb_extension_manager_test extends phpbb_database_test_case
 		$phpbb_root_path = __DIR__ . './../../phpBB/';
 		$php_ext = 'php';
 		$table_prefix = 'phpbb_';
-		$user = new \phpbb\user('\phpbb\user');
 
 		$container = new phpbb_mock_container_builder();
 
@@ -177,12 +176,10 @@ class phpbb_extension_manager_test extends phpbb_database_test_case
 			$container,
 			$db,
 			$config,
-			new \phpbb\filesystem(),
-			$user,
 			'phpbb_ext',
 			dirname(__FILE__) . '/',
 			$php_ext,
-			($with_cache) ? new phpbb_mock_cache() : null
+			($with_cache) ? new \phpbb\cache\service(new phpbb_mock_cache(), $config, $db, $phpbb_root_path, $php_ext) : null
 		);
 	}
 }

@@ -26,7 +26,7 @@ class acp_groups
 	function main($id, $mode)
 	{
 		global $config, $db, $user, $auth, $template, $cache;
-		global $phpbb_root_path, $phpbb_admin_path, $phpEx, $table_prefix, $file_uploads;
+		global $phpbb_root_path, $phpbb_admin_path, $phpEx;
 		global $request, $phpbb_container, $phpbb_dispatcher;
 
 		$user->add_lang('acp/groups');
@@ -42,7 +42,10 @@ class acp_groups
 			return;
 		}
 
-		include($phpbb_root_path . 'includes/functions_user.' . $phpEx);
+		if (!function_exists('group_user_attributes'))
+		{
+			include($phpbb_root_path . 'includes/functions_user.' . $phpEx);
+		}
 
 		// Check and set some common vars
 		$action		= (isset($_POST['add'])) ? 'add' : ((isset($_POST['addusers'])) ? 'addusers' : $request->variable('action', ''));
@@ -53,6 +56,9 @@ class acp_groups
 		$default	= $request->variable('default', 0);
 		$start		= $request->variable('start', 0);
 		$update		= (isset($_POST['update'])) ? true : false;
+
+		/** @var \phpbb\group\helper $group_helper */
+		$group_helper = $phpbb_container->get('group_helper');
 
 		// Clear some vars
 		$group_row = array();
@@ -98,7 +104,7 @@ class acp_groups
 				}
 
 				// Approve, demote or promote
-				$group_name = ($group_row['group_type'] == GROUP_SPECIAL) ? $user->lang['G_' . $group_row['group_name']] : $group_row['group_name'];
+				$group_name = $group_helper->get_name($group_row['group_name']);
 				$error = group_user_attributes($action, $group_id, $mark_ary, false, $group_name);
 
 				if (!$error)
@@ -139,7 +145,7 @@ class acp_groups
 
 				if (confirm_box(true))
 				{
-					$group_name = ($group_row['group_type'] == GROUP_SPECIAL) ? $user->lang['G_' . $group_row['group_name']] : $group_row['group_name'];
+					$group_name = $group_helper->get_name($group_row['group_name']);
 					group_user_attributes('default', $group_id, $mark_ary, false, $group_name, $group_row);
 					trigger_error($user->lang['GROUP_DEFS_UPDATED'] . adm_back_link($this->u_action . '&amp;action=list&amp;g=' . $group_id));
 				}
@@ -158,7 +164,7 @@ class acp_groups
 			case 'set_default_on_all':
 				if (confirm_box(true))
 				{
-					$group_name = ($group_row['group_type'] == GROUP_SPECIAL) ? $user->lang['G_' . $group_row['group_name']] : $group_row['group_name'];
+					$group_name = $group_helper->get_name($group_row['group_name']);
 
 					$start = 0;
 
@@ -181,7 +187,7 @@ class acp_groups
 
 							group_user_attributes('default', $group_id, $mark_ary, false, $group_name, $group_row);
 
-							$start = (sizeof($mark_ary) < 200) ? 0 : $start + 200;
+							$start = (count($mark_ary) < 200) ? 0 : $start + 200;
 						}
 						else
 						{
@@ -217,6 +223,7 @@ class acp_groups
 				}
 				else if ($action === 'delete' && $group_row['group_type'] == GROUP_SPECIAL)
 				{
+					send_status_line(403, 'Forbidden');
 					trigger_error($user->lang['NO_AUTH_OPERATION'] . adm_back_link($this->u_action), E_USER_WARNING);
 				}
 
@@ -229,6 +236,7 @@ class acp_groups
 						case 'delete':
 							if (!$auth->acl_get('a_groupdel'))
 							{
+								send_status_line(403, 'Forbidden');
 								trigger_error($user->lang['NO_AUTH_OPERATION'] . adm_back_link($this->u_action), E_USER_WARNING);
 							}
 
@@ -236,7 +244,7 @@ class acp_groups
 						break;
 
 						case 'deleteusers':
-							$group_name = ($group_row['group_type'] == GROUP_SPECIAL) ? $user->lang['G_' . $group_row['group_name']] : $group_row['group_name'];
+							$group_name = $group_helper->get_name($group_row['group_name']);
 							$error = group_user_del($group_id, $mark_ary, false, $group_name);
 						break;
 					}
@@ -280,7 +288,7 @@ class acp_groups
 				}
 
 				$name_ary = array_unique(explode("\n", $name_ary));
-				$group_name = ($group_row['group_type'] == GROUP_SPECIAL) ? $user->lang['G_' . $group_row['group_name']] : $group_row['group_name'];
+				$group_name = $group_helper->get_name($group_row['group_name']);
 
 				// Add user/s to group
 				if ($error = group_user_add($group_id, false, $name_ary, $group_name, $default, $leader, 0, $group_row))
@@ -295,9 +303,10 @@ class acp_groups
 			case 'edit':
 			case 'add':
 
-				include($phpbb_root_path . 'includes/functions_display.' . $phpEx);
-
-				$data = $submit_ary = array();
+				if (!function_exists('display_forums'))
+				{
+					include($phpbb_root_path . 'includes/functions_display.' . $phpEx);
+				}
 
 				if ($action == 'edit' && !$group_id)
 				{
@@ -306,6 +315,7 @@ class acp_groups
 
 				if ($action == 'add' && !$auth->acl_get('a_groupadd'))
 				{
+					send_status_line(403, 'Forbidden');
 					trigger_error($user->lang['NO_AUTH_OPERATION'] . adm_back_link($this->u_action), E_USER_WARNING);
 				}
 
@@ -318,10 +328,11 @@ class acp_groups
 				$avatar_data = null;
 				$avatar_error = array();
 
+				/** @var \phpbb\avatar\manager $phpbb_avatar_manager */
+				$phpbb_avatar_manager = $phpbb_container->get('avatar.manager');
+
 				if ($config['allow_avatar'])
 				{
-					/* @var $phpbb_avatar_manager \phpbb\avatar\manager */
-					$phpbb_avatar_manager = $phpbb_container->get('avatar.manager');
 					$avatar_drivers = $phpbb_avatar_manager->get_enabled_drivers();
 
 					// This is normalised data, without the group_ prefix
@@ -475,7 +486,7 @@ class acp_groups
 						$error = array_merge($error, $validation_error);
 					}
 
-					if (!sizeof($error))
+					if (!count($error))
 					{
 						// Only set the rank, colour, etc. if it's changed or if we're adding a new
 						// group. This prevents existing group members being updated if no changes
@@ -603,7 +614,7 @@ class acp_groups
 						}
 					}
 
-					if (sizeof($error))
+					if (count($error))
 					{
 						$error = array_map(array(&$user, 'lang'), $error);
 						$group_rank = $submit_ary['rank'];
@@ -662,14 +673,21 @@ class acp_groups
 					$avatars_enabled = false;
 					$selected_driver = $phpbb_avatar_manager->clean_driver_name($request->variable('avatar_driver', $avatar_data['avatar_type']));
 
+					// Assign min and max values before generating avatar driver html
+					$template->assign_vars(array(
+							'AVATAR_MIN_WIDTH'		=> $config['avatar_min_width'],
+							'AVATAR_MAX_WIDTH'		=> $config['avatar_max_width'],
+							'AVATAR_MIN_HEIGHT'		=> $config['avatar_min_height'],
+							'AVATAR_MAX_HEIGHT'		=> $config['avatar_max_height'],
+					));
+
 					foreach ($avatar_drivers as $current_driver)
 					{
 						$driver = $phpbb_avatar_manager->get_driver($current_driver);
 
 						$avatars_enabled = true;
-						$config_name = $phpbb_avatar_manager->get_driver_config_name($driver);
 						$template->set_filenames(array(
-							'avatar' => "acp_avatar_options_{$config_name}.html",
+							'avatar' => $driver->get_acp_template_name(),
 						));
 
 						if ($driver->prepare_form($request, $template, $user, $avatar_data, $avatar_error))
@@ -714,13 +732,13 @@ class acp_groups
 					'S_ADD_GROUP'		=> ($action == 'add') ? true : false,
 					'S_GROUP_PERM'		=> ($action == 'add' && $auth->acl_get('a_authgroups') && $auth->acl_gets('a_aauth', 'a_fauth', 'a_mauth', 'a_uauth')) ? true : false,
 					'S_INCLUDE_SWATCH'	=> true,
-					'S_ERROR'			=> (sizeof($error)) ? true : false,
+					'S_ERROR'			=> (count($error)) ? true : false,
 					'S_SPECIAL_GROUP'	=> ($group_type == GROUP_SPECIAL) ? true : false,
 					'S_USER_FOUNDER'	=> ($user->data['user_type'] == USER_FOUNDER) ? true : false,
 					'S_AVATARS_ENABLED'		=> ($config['allow_avatar'] && $avatars_enabled),
 
-					'ERROR_MSG'				=> (sizeof($error)) ? implode('<br />', $error) : '',
-					'GROUP_NAME'			=> ($group_type == GROUP_SPECIAL) ? $user->lang['G_' . $group_name] : $group_name,
+					'ERROR_MSG'				=> (count($error)) ? implode('<br />', $error) : '',
+					'GROUP_NAME'			=> $group_helper->get_name($group_name),
 					'GROUP_INTERNAL_NAME'	=> $group_name,
 					'GROUP_DESC'			=> $group_desc_data['text'],
 					'GROUP_RECEIVE_PM'		=> (isset($group_row['group_receive_pm']) && $group_row['group_receive_pm']) ? ' checked="checked"' : '',
@@ -855,7 +873,7 @@ class acp_groups
 					'S_GROUP_SPECIAL'	=> ($group_row['group_type'] == GROUP_SPECIAL) ? true : false,
 					'S_ACTION_OPTIONS'	=> $s_action_options,
 
-					'GROUP_NAME'	=> ($group_row['group_type'] == GROUP_SPECIAL) ? $user->lang['G_' . $group_row['group_name']] : $group_row['group_name'],
+					'GROUP_NAME'	=> $group_helper->get_name($group_row['group_name']),
 
 					'U_ACTION'			=> $this->u_action . "&amp;g=$group_id",
 					'U_BACK'			=> $this->u_action,
@@ -924,11 +942,12 @@ class acp_groups
 			// used for easy access to the data within a group
 			$cached_group_data[$type][$row['group_id']] = $row;
 			$cached_group_data[$type][$row['group_id']]['total_members'] = 0;
+			$cached_group_data[$type][$row['group_id']]['pending_members'] = 0;
 		}
 		$db->sql_freeresult($result);
 
 		// How many people are in which group?
-		$sql = 'SELECT COUNT(ug.user_id) AS total_members, ug.group_id
+		$sql = 'SELECT COUNT(ug.user_id) AS total_members, SUM(ug.user_pending) AS pending_members, ug.group_id
 			FROM ' . USER_GROUP_TABLE . ' ug
 			WHERE ' . $db->sql_in_set('ug.group_id', array_keys($lookup)) . '
 			GROUP BY ug.group_id';
@@ -938,6 +957,7 @@ class acp_groups
 		{
 			$type = $lookup[$row['group_id']];
 			$cached_group_data[$type][$row['group_id']]['total_members'] = $row['total_members'];
+			$cached_group_data[$type][$row['group_id']]['pending_members'] = $row['pending_members'];
 		}
 		$db->sql_freeresult($result);
 
@@ -966,6 +986,7 @@ class acp_groups
 
 					'GROUP_NAME'	=> $group_name,
 					'TOTAL_MEMBERS'	=> $row['total_members'],
+					'PENDING_MEMBERS' => $row['pending_members']
 				));
 			}
 		}
@@ -983,6 +1004,9 @@ class acp_groups
 		$group_id = $request->variable('g', 0);
 		$teampage_id = $request->variable('t', 0);
 		$category_id = $request->variable('c', 0);
+
+		/** @var \phpbb\group\helper $group_helper */
+		$group_helper = $phpbb_container->get('group_helper');
 
 		if ($field && !in_array($field, array('legend', 'teampage')))
 		{
@@ -1083,10 +1107,9 @@ class acp_groups
 			ORDER BY group_legend ASC, group_type DESC, group_name ASC';
 		$result = $db->sql_query($sql);
 
-		$s_group_select_legend = '';
 		while ($row = $db->sql_fetchrow($result))
 		{
-			$group_name = ($row['group_type'] == GROUP_SPECIAL) ? $user->lang['G_' . $row['group_name']] : $row['group_name'];
+			$group_name = $group_helper->get_name($row['group_name']);
 			if ($row['group_legend'])
 			{
 				$template->assign_block_vars('legend', array(
@@ -1121,7 +1144,6 @@ class acp_groups
 			ORDER BY t.teampage_position ASC';
 		$result = $db->sql_query($sql);
 
-		$category_data = array();
 		while ($row = $db->sql_fetchrow($result))
 		{
 			if ($row['teampage_id'] == $category_id)
@@ -1134,7 +1156,7 @@ class acp_groups
 
 			if ($row['group_id'])
 			{
-				$group_name = ($row['group_type'] == GROUP_SPECIAL) ? $user->lang['G_' . $row['group_name']] : $row['group_name'];
+				$group_name = $group_helper->get_name($row['group_name']);
 				$group_type = $user->lang[\phpbb\groupposition\teampage::group_type_language($row['group_type'])];
 			}
 			else
@@ -1164,10 +1186,9 @@ class acp_groups
 			ORDER BY g.group_type DESC, g.group_name ASC';
 		$result = $db->sql_query($sql);
 
-		$s_group_select_teampage = '';
 		while ($row = $db->sql_fetchrow($result))
 		{
-			$group_name = ($row['group_type'] == GROUP_SPECIAL) ? $user->lang['G_' . $row['group_name']] : $row['group_name'];
+			$group_name = $group_helper->get_name($row['group_name']);
 			$template->assign_block_vars('add_teampage', array(
 				'GROUP_ID'		=> (int) $row['group_id'],
 				'GROUP_NAME'	=> $group_name,

@@ -29,7 +29,7 @@ class ucp_register
 
 	function main($id, $mode)
 	{
-		global $config, $db, $user, $auth, $template, $phpbb_root_path, $phpEx;
+		global $config, $db, $user, $template, $phpbb_root_path, $phpEx;
 		global $request, $phpbb_container, $phpbb_dispatcher;
 
 		//
@@ -44,6 +44,28 @@ class ucp_register
 		$submit			= $request->is_set_post('submit');
 		$change_lang	= $request->variable('change_lang', '');
 		$user_lang		= $request->variable('lang', $user->lang_name);
+
+		/**
+		* Add UCP register data before they are assigned to the template or submitted
+		*
+		* To assign data to the template, use $template->assign_vars()
+		*
+		* @event core.ucp_register_requests_after
+		* @var	bool	coppa		Is set coppa
+		* @var	bool	agreed		Did user agree to coppa?
+		* @var	bool	submit		Is set post submit?
+		* @var	string	change_lang	Change language request
+		* @var	string	user_lang	User language request
+		* @since 3.1.11-RC1
+		*/
+		$vars = array(
+			'coppa',
+			'agreed',
+			'submit',
+			'change_lang',
+			'user_lang',
+		);
+		extract($phpbb_dispatcher->trigger_event('core.ucp_register_requests_after', compact($vars)));
 
 		if ($agreed)
 		{
@@ -145,7 +167,7 @@ class ucp_register
 				unset($now);
 
 				$template->assign_vars(array(
-					'S_LANG_OPTIONS'	=> (sizeof($lang_row) > 1) ? language_select($user_lang) : '',
+					'S_LANG_OPTIONS'	=> (count($lang_row) > 1) ? language_select($user_lang) : '',
 					'L_COPPA_NO'		=> sprintf($user->lang['UCP_COPPA_BEFORE'], $coppa_birthday),
 					'L_COPPA_YES'		=> sprintf($user->lang['UCP_COPPA_ON_AFTER'], $coppa_birthday),
 
@@ -163,7 +185,7 @@ class ucp_register
 			else
 			{
 				$template->assign_vars(array(
-					'S_LANG_OPTIONS'	=> (sizeof($lang_row) > 1) ? language_select($user_lang) : '',
+					'S_LANG_OPTIONS'	=> (count($lang_row) > 1) ? language_select($user_lang) : '',
 					'L_TERMS_OF_USE'	=> sprintf($user->lang['TERMS_OF_USE_CONTENT'], $config['sitename'], generate_board_url()),
 
 					'S_SHOW_COPPA'		=> false,
@@ -177,6 +199,16 @@ class ucp_register
 				);
 			}
 			unset($lang_row);
+
+			/**
+			* Allows to modify the agreements.
+			*
+			* To assign data to the template, use $template->assign_vars()
+			*
+			* @event core.ucp_register_agreement
+			* @since 3.1.6-RC1
+			*/
+			$phpbb_dispatcher->dispatch('core.ucp_register_agreement');
 
 			$this->tpl_name = 'ucp_agreement';
 			return;
@@ -265,7 +297,7 @@ class ucp_register
 			// validate custom profile fields
 			$cp->submit_cp_field('register', $user->get_iso_lang_id(), $cp_data, $error);
 
-			if (!sizeof($error))
+			if (!count($error))
 			{
 				if ($data['new_password'] != $data['password_confirm'])
 				{
@@ -286,7 +318,7 @@ class ucp_register
 			$vars = array('submit', 'data', 'cp_data', 'error');
 			extract($phpbb_dispatcher->trigger_event('core.ucp_register_data_after', compact($vars)));
 
-			if (!sizeof($error))
+			if (!count($error))
 			{
 				$server_url = generate_board_url();
 
@@ -474,7 +506,6 @@ class ucp_register
 			$s_hidden_fields = array_merge($s_hidden_fields, $captcha->get_hidden_fields());
 		}
 		$s_hidden_fields = build_hidden_fields($s_hidden_fields);
-		$confirm_image = '';
 
 		// Visual Confirmation - Show images
 		if ($config['enable_confirm'])
@@ -497,9 +528,11 @@ class ucp_register
 			break;
 		}
 
-		$timezone_selects = phpbb_timezone_select($template, $user, $data['tz'], true);
+		// Assign template vars for timezone select
+		phpbb_timezone_select($template, $user, $data['tz'], true);
+
 		$template->assign_vars(array(
-			'ERROR'				=> (sizeof($error)) ? implode('<br />', $error) : '',
+			'ERROR'				=> (count($error)) ? implode('<br />', $error) : '',
 			'USERNAME'			=> $data['username'],
 			'PASSWORD'			=> $data['new_password'],
 			'PASSWORD_CONFIRM'	=> $data['password_confirm'],

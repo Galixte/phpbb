@@ -13,8 +13,90 @@
 
 class phpbb_event_md_exporter_test extends phpbb_test_case
 {
-
 	static public function crawl_eventsmd_data()
+	{
+		return array(
+			array('normal_events.md.test', null, null, array(
+				'acp_bbcodes_actions_append' => array(
+					'event' => 'acp_bbcodes_actions_append',
+					'files' => array(
+						'prosilver' => array(),
+						'adm' => array('acp_bbcodes.html'),
+					),
+					'since' => '3.1.0-a3',
+					'changed' => array(
+						'3.1.0-a4' => '',
+					),
+					'description' => 'desc1' . "\n",
+				),
+				'acp_bbcodes_actions_prepend' => array(
+					'event' => 'acp_bbcodes_actions_prepend',
+					'files' => array(
+						'prosilver' => array(),
+						'adm' => array('acp_bbcodes.html'),
+					),
+					'since' => '3.1.0-a5',
+					'changed' => array(),
+					'description' => 'desc2' . "\n",
+				),
+				'acp_bbcodes_actions_prepend2' => array(
+					'event' => 'acp_bbcodes_actions_prepend2',
+					'files' => array(
+						'prosilver' => array(),
+						'adm' => array('acp_bbcodes.html'),
+					),
+					'since' => '3.1.0-a4',
+					'changed' => array(
+						'3.1.0-a5' => 'Moved up',
+						'3.1.0-a6' => 'Moved down',
+					),
+					'description' => 'desc2' . "\n",
+				),
+			)),
+			array('normal_events.md.test', '3.1.0-a5', '3.1.0-a5', array(
+				'acp_bbcodes_actions_prepend' => array(
+					'event' => 'acp_bbcodes_actions_prepend',
+					'files' => array(
+						'prosilver' => array(),
+						'adm' => array('acp_bbcodes.html'),
+					),
+					'since' => '3.1.0-a5',
+					'changed' => array(),
+					'description' => 'desc2' . "\n",
+				),
+				'acp_bbcodes_actions_prepend2' => array(
+					'event' => 'acp_bbcodes_actions_prepend2',
+					'files' => array(
+						'prosilver' => array(),
+						'adm' => array('acp_bbcodes.html'),
+					),
+					'since' => '3.1.0-a4',
+					'changed' => array(
+						'3.1.0-a5' => 'Moved up',
+						'3.1.0-a6' => 'Moved down',
+					),
+					'description' => 'desc2' . "\n",
+				),
+			)),
+		);
+	}
+
+	/**
+	 * @dataProvider crawl_eventsmd_data
+	 *
+	 * @param string $file
+	 * @param string $min_version
+	 * @param string $max_version
+	 * @param array $events
+	 */
+	public function test_crawl_eventsmd($file, $min_version, $max_version, $events)
+	{
+		$exporter = new \phpbb\event\md_exporter(dirname(__FILE__) . '/fixtures/', null, $min_version, $max_version);
+		$this->assertSame(count($events), $exporter->crawl_eventsmd($file, 'adm'));
+		$this->assertEquals($events, $exporter->get_events());
+	}
+
+	static public function crawl_phpbb_eventsmd_data()
 	{
 		return array(
 			array('styles'),
@@ -23,9 +105,9 @@ class phpbb_event_md_exporter_test extends phpbb_test_case
 	}
 
 	/**
-	* @dataProvider crawl_eventsmd_data
-	*/
-	public function test_crawl_eventsmd($filter)
+	 * @dataProvider crawl_phpbb_eventsmd_data
+	 */
+	public function test_crawl_phpbb_eventsmd($filter)
 	{
 		global $phpbb_root_path;
 		$exporter = new \phpbb\event\md_exporter($phpbb_root_path);
@@ -64,7 +146,7 @@ class phpbb_event_md_exporter_test extends phpbb_test_case
 		$exporter->crawl_eventsmd('docs/events.md', $filter);
 		$events = $exporter->crawl_file_for_events($file);
 
-		$this->assertGreaterThanOrEqual(0, sizeof($events));
+		$this->assertGreaterThanOrEqual(0, count($events));
 		$this->assertTrue($exporter->validate_events_from_file($file, $events));
 	}
 }

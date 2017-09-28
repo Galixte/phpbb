@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <phpunit backupGlobals="true"
-         backupStaticAttributes="true"
+         backupStaticAttributes="false"
          colors="true"
          convertErrorsToExceptions="true"
          convertNoticesToExceptions="true"
@@ -17,9 +17,6 @@
 			<exclude>../tests/functional</exclude>
 			<exclude>../tests/lint_test.php</exclude>
 			<exclude>../tests/ui</exclude>
-		</testsuite>
-		<testsuite name="phpBB Lint Test">
-			<file>../tests/lint_test.php</file>
 		</testsuite>
 		<testsuite name="phpBB Functional Tests">
 			<directory suffix="_test.php" phpVersion="5.3.19" phpVersionOperator=">=">../tests/functional</directory>

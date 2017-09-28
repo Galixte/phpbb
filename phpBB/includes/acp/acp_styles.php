@@ -53,15 +53,21 @@ class acp_styles
 	/** @var \phpbb\auth\auth */
 	protected $auth;
 
+	/** @var \phpbb\textformatter\cache_interface */
+	protected $text_formatter_cache;
+
 	/** @var string */
 	protected $phpbb_root_path;
 
 	/** @var string */
 	protected $php_ext;
 
+	/** @var \phpbb\event\dispatcher_interface */
+	protected $dispatcher;
+
 	public function main($id, $mode)
 	{
-		global $db, $user, $phpbb_admin_path, $phpbb_root_path, $phpEx, $template, $request, $cache, $auth, $config;
+		global $db, $user, $phpbb_admin_path, $phpbb_root_path, $phpEx, $template, $request, $cache, $auth, $config, $phpbb_dispatcher, $phpbb_container;
 
 		$this->db = $db;
 		$this->user = $user;
@@ -69,9 +75,11 @@ class acp_styles
 		$this->request = $request;
 		$this->cache = $cache;
 		$this->auth = $auth;
+		$this->text_formatter_cache = $phpbb_container->get('text_formatter.cache');
 		$this->config = $config;
 		$this->phpbb_root_path = $phpbb_root_path;
 		$this->php_ext = $phpEx;
+		$this->dispatcher = $phpbb_dispatcher;
 
 		$this->default_style = $config['default_style'];
 		$this->styles_path = $this->phpbb_root_path . $this->styles_path_absolute . '/';
@@ -120,6 +128,18 @@ class acp_styles
 			'S_HIDDEN_FIELDS'	=> build_hidden_fields($this->s_hidden_fields)
 			)
 		);
+
+		/**
+		 * Run code before ACP styles action execution
+		 *
+		 * @event core.acp_styles_action_before
+		 * @var	int     id          Module ID
+		 * @var	string  mode        Active module
+		 * @var	string  action      Module that should be run
+		 * @since 3.1.7-RC1
+		 */
+		$vars = array('id', 'mode', 'action');
+		extract($this->dispatcher->trigger_event('core.acp_styles_action_before', compact($vars)));
 
 		// Execute actions
 		switch ($action)
@@ -181,7 +201,6 @@ class acp_styles
 		$messages = array();
 		$installed_names = array();
 		$installed_dirs = array();
-		$last_installed = false;
 		foreach ($dirs as $dir)
 		{
 			if (in_array($dir, $this->reserved_style_names))
@@ -204,7 +223,6 @@ class acp_styles
 					$style['style_id'] = $this->install_style($style);
 					$style['_installed'] = true;
 					$found = true;
-					$last_installed = $style['style_id'];
 					$installed_names[] = $style['style_name'];
 					$installed_dirs[] = $style['style_path'];
 					$messages[] = sprintf($this->user->lang['STYLE_INSTALLED'], htmlspecialchars($style['style_name']));
@@ -214,6 +232,12 @@ class acp_styles
 			{
 				$messages[] = sprintf($this->user->lang['STYLE_NOT_INSTALLED'], htmlspecialchars($dir));
 			}
+		}
+
+		// Invalidate the text formatter's cache for the new styles to take effect
+		if (!empty($installed_names))
+		{
+			$this->text_formatter_cache->invalidate();
 		}
 
 		// Show message
@@ -424,6 +448,9 @@ class acp_styles
 			trigger_error($this->user->lang['NO_MATCHING_STYLES_FOUND'] . adm_back_link($this->u_action), E_USER_WARNING);
 		}
 
+		// Read style configuration file
+		$style_cfg = $this->read_style_cfg($style['style_path']);
+
 		// Find all available parent styles
 		$list = $this->find_possible_parents($styles, $id);
 
@@ -571,6 +598,7 @@ class acp_styles
 			'STYLE_ID'			=> $style['style_id'],
 			'STYLE_NAME'		=> htmlspecialchars($style['style_name']),
 			'STYLE_PATH'		=> htmlspecialchars($style['style_path']),
+			'STYLE_VERSION'		=> htmlspecialchars($style_cfg['style_version']),
 			'STYLE_COPYRIGHT'	=> strip_tags($style['style_copyright']),
 			'STYLE_PARENT'		=> $style['style_parent_id'],
 			'S_STYLE_ACTIVE'	=> $style['style_active'],
@@ -1003,7 +1031,7 @@ class acp_styles
 
 		// Assign template variables
 		$this->template->assign_block_vars('styles_list', $row);
-		foreach($actions as $action)
+		foreach ($actions as $action)
 		{
 			$this->template->assign_block_vars('styles_list.actions', $action);
 		}

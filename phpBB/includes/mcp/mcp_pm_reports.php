@@ -35,7 +35,7 @@ class mcp_pm_reports
 
 	function main($id, $mode)
 	{
-		global $auth, $db, $user, $template, $cache, $request;
+		global $auth, $db, $user, $template, $request;
 		global $config, $phpbb_root_path, $phpEx, $action, $phpbb_container;
 
 		include_once($phpbb_root_path . 'includes/functions_posting.' . $phpEx);
@@ -55,7 +55,7 @@ class mcp_pm_reports
 
 				$report_id_list = $request->variable('report_id_list', array(0));
 
-				if (!sizeof($report_id_list))
+				if (!count($report_id_list))
 				{
 					trigger_error('NO_REPORT_SELECTED');
 				}
@@ -97,14 +97,14 @@ class mcp_pm_reports
 				/* @var $phpbb_notifications \phpbb\notification\manager */
 				$phpbb_notifications = $phpbb_container->get('notification_manager');
 
-				$phpbb_notifications->mark_notifications_read_by_parent('notification.type.report_pm', $report_id, $user->data['user_id']);
+				$phpbb_notifications->mark_notifications_by_parent('report_pm', $report_id, $user->data['user_id']);
 
 				$pm_id = $report['pm_id'];
 				$report_id = $report['report_id'];
 
 				$pm_info = phpbb_get_pm_data(array($pm_id));
 
-				if (!sizeof($pm_info))
+				if (!count($pm_info))
 				{
 					trigger_error('NO_REPORT_SELECTED');
 				}
@@ -141,7 +141,7 @@ class mcp_pm_reports
 					}
 					$db->sql_freeresult($result);
 
-					if (sizeof($attachments))
+					if (count($attachments))
 					{
 						$update_count = array();
 						parse_attachments(0, $message, $attachments, $update_count);
@@ -251,7 +251,7 @@ class mcp_pm_reports
 				}
 				$db->sql_freeresult($result);
 
-				if (sizeof($report_ids))
+				if (count($report_ids))
 				{
 					$sql = 'SELECT p.*, u.username, u.username_clean, u.user_colour, r.user_id as reporter_id, ru.username as reporter_name, ru.user_colour as reporter_colour, r.report_time, r.report_id
 						FROM ' . REPORTS_TABLE . ' r, ' . PRIVMSGS_TABLE . ' p, ' . USERS_TABLE . ' u, ' . USERS_TABLE . ' ru
@@ -270,7 +270,7 @@ class mcp_pm_reports
 					}
 					$db->sql_freeresult($result);
 
-					if (sizeof($pm_list))
+					if (count($pm_list))
 					{
 						$address_list = get_recipient_strings($pm_by_id);
 

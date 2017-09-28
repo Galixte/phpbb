@@ -82,8 +82,8 @@ class p_master
 	*/
 	function list_modules($p_class)
 	{
-		global $auth, $db, $user, $cache;
-		global $config, $phpbb_root_path, $phpEx, $phpbb_dispatcher;
+		global $db, $user, $cache;
+		global $phpbb_dispatcher;
 
 		// Sanitise for future path use, it's escaped as appropriate for queries
 		$this->p_class = str_replace(array('.', '/', '\\'), '', basename($p_class));
@@ -243,7 +243,7 @@ class p_master
 				}
 			}
 
-			$depth = sizeof($this->module_cache['parents'][$row['module_id']]);
+			$depth = count($this->module_cache['parents'][$row['module_id']]);
 
 			// We need to prefix the functions to not create a naming conflict
 
@@ -279,7 +279,7 @@ class p_master
 				'parent'	=> (int) $row['parent_id'],
 				'cat'		=> ($row['right_id'] > $row['left_id'] + 1) ? true : false,
 
-				'is_duplicate'	=> ($row['module_basename'] && sizeof($names[$row['module_basename'] . '_' . $row['module_mode']]) > 1) ? true : false,
+				'is_duplicate'	=> ($row['module_basename'] && count($names[$row['module_basename'] . '_' . $row['module_mode']]) > 1) ? true : false,
 
 				'name'		=> (string) $row['module_basename'],
 				'mode'		=> (string) $row['module_mode'],
@@ -431,7 +431,7 @@ class p_master
 		extract($phpbb_dispatcher->trigger_event('core.module_auth', compact($vars)));
 
 		$tokens = $match[0];
-		for ($i = 0, $size = sizeof($tokens); $i < $size; $i++)
+		for ($i = 0, $size = count($tokens); $i < $size; $i++)
 		{
 			$token = &$tokens[$i];
 
@@ -729,8 +729,6 @@ class p_master
 	*/
 	function get_parents($parent_id, $left_id, $right_id, &$all_parents)
 	{
-		global $db;
-
 		$parents = array();
 
 		if ($parent_id > 0)
@@ -822,7 +820,7 @@ class p_master
 		// Make sure the module_url has a question mark set, effectively determining the delimiter to use
 		$delim = (strpos($module_url, '?') === false) ? '?' : '&amp;';
 
-		$current_padding = $current_depth = 0;
+		$current_depth = 0;
 		$linear_offset 	= 'l_block1';
 		$tabular_offset = 't_block2';
 
@@ -935,6 +933,14 @@ class p_master
 					'U_TITLE'		=> $u_title
 				);
 
+				if (isset($this->module_cache['parents'][$item_ary['id']]) || $item_ary['id'] == $this->p_id)
+				{
+					$template->assign_block_vars('navlinks', array(
+						'FORUM_NAME'	=> $item_ary['lang'],
+						'U_VIEW_FORUM'	=> $u_title,
+					));
+				}
+
 				$template->assign_block_vars($use_tabular_offset, array_merge($tpl_ary, array_change_key_case($item_ary, CASE_UPPER)));
 			}
 
@@ -978,7 +984,7 @@ class p_master
 	*
 	* @param string $class module class (acp/mcp/ucp)
 	* @param string $name module name (class name of the module, or its basename
-    *                     phpbb_ext_foo_acp_bar_module, ucp_zebra or zebra)
+	*                     phpbb_ext_foo_acp_bar_module, ucp_zebra or zebra)
 	* @param string $mode mode, as passed through to the module
 	*
 	*/
@@ -1088,7 +1094,7 @@ class p_master
 			->core_path('language/' . $user->lang_name . '/mods/')
 			->find();
 
-		$lang_files = array_unique(array_merge($user_lang_files, $english_lang_files, $default_lang_files));
+		$lang_files = array_merge($english_lang_files, $default_lang_files, $user_lang_files);
 		foreach ($lang_files as $lang_file => $ext_name)
 		{
 			$user->add_lang_ext($ext_name, $lang_file);

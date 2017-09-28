@@ -11,8 +11,6 @@
 *
 */
 
-require_once dirname(__FILE__) . '/../../phpBB/includes/functions.php';
-
 class phpbb_log_add_test extends phpbb_database_test_case
 {
 	public function getDataSet()
@@ -27,8 +25,10 @@ class phpbb_log_add_test extends phpbb_database_test_case
 		$db = $this->new_dbal();
 		$cache = new phpbb_mock_cache;
 		$phpbb_dispatcher = new phpbb_mock_event_dispatcher();
-		$user = new \phpbb\user('\phpbb\datetime');
-		$auth = $this->getMock('\phpbb\auth\auth');
+		$lang_loader = new \phpbb\language\language_file_loader($phpbb_root_path, $phpEx);
+		$lang = new \phpbb\language\language($lang_loader);
+		$user = new \phpbb\user($lang, '\phpbb\datetime');
+		$auth = $this->createMock('\phpbb\auth\auth');
 
 		$log = new \phpbb\log\log($db, $user, $auth, $phpbb_dispatcher, $phpbb_root_path, 'adm/', $phpEx, LOG_TABLE);
 
@@ -56,8 +56,10 @@ class phpbb_log_add_test extends phpbb_database_test_case
 		$db = $this->new_dbal();
 		$cache = new phpbb_mock_cache;
 		$phpbb_dispatcher = new phpbb_mock_event_dispatcher();
-		$user = new \phpbb\user('\phpbb\datetime');
-		$auth = $this->getMock('\phpbb\auth\auth');
+		$lang_loader = new \phpbb\language\language_file_loader($phpbb_root_path, $phpEx);
+		$lang = new \phpbb\language\language($lang_loader);
+		$user = new \phpbb\user($lang, '\phpbb\datetime');
+		$auth = $this->createMock('\phpbb\auth\auth');
 
 		$log = new \phpbb\log\log($db, $user, $auth, $phpbb_dispatcher, $phpbb_root_path, 'adm/', $phpEx, LOG_TABLE);
 
@@ -88,5 +90,14 @@ class phpbb_log_add_test extends phpbb_database_test_case
 
 		// Invalid mode specified
 		$this->assertFalse($log->add('mode_does_not_exist', $user_id, $log_ip, $log_operation, $log_time));
+
+		// null user and null ip given
+		$this->assertEquals(3, $log->add($mode, null, null, $log_operation, $log_time), 'Adding log with null user_id and null user_ip failed');
+		$sql = 'SELECT user_id, log_ip FROM ' . LOG_TABLE . ' WHERE log_id = 3';
+		$result = $db->sql_query($sql);
+		$row = $db->sql_fetchrow($result);
+		$db->sql_freeresult($result);
+		$this->assertEquals(ANONYMOUS, $row['user_id'], 'Adding log with null user_id failed');
+		$this->assertEquals('', $row['log_ip'], 'Adding log with null user_ip failed');
 	}
 }
