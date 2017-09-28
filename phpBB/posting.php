@@ -341,11 +341,6 @@ switch ($mode)
 			$is_authed = true;
 			$mode = 'soft_delete';
 		}
-		else if (!$is_authed)
-		{
-			// Display the same error message for softdelete we use for delete
-			$mode = 'delete';
-		}
 	break;
 }
 /**
@@ -394,13 +389,13 @@ $vars = array(
 );
 extract($phpbb_dispatcher->trigger_event('core.modify_posting_auth', compact($vars)));
 
-if (!$is_authed)
+if (!$is_authed || !empty($error))
 {
-	$check_auth = ($mode == 'quote') ? 'reply' : $mode;
+	$check_auth = ($mode == 'quote') ? 'reply' : (($mode == 'soft_delete') ? 'delete' : $mode);
 
 	if ($user->data['is_registered'])
 	{
-		trigger_error('USER_CANNOT_' . strtoupper($check_auth));
+		trigger_error(empty($error) ? 'USER_CANNOT_' . strtoupper($check_auth) : implode('<br/>', $error));
 	}
 	$message = $user->lang['LOGIN_EXPLAIN_' . strtoupper($mode)];
 
@@ -551,6 +546,27 @@ if ($post_data['poll_start'])
 	}
 	$db->sql_freeresult($result);
 }
+
+/**
+* This event allows you to modify the post data before parsing
+*
+* @event core.posting_modify_post_data
+* @var	int		forum_id	ID of the forum
+* @var	string	mode		What action to take if the form has been submitted
+*							post|reply|quote|edit|delete|bump|smilies|popup
+* @var	array	post_data	Array with post data
+* @var	int		post_id		ID of the post
+* @var	int		topic_id	ID of the topic
+* @since 3.2.2-RC1
+*/
+$vars = array(
+	'forum_id',
+	'mode',
+	'post_data',
+	'post_id',
+	'topic_id',
+);
+extract($phpbb_dispatcher->trigger_event('core.posting_modify_post_data', compact($vars)));
 
 if ($mode == 'edit')
 {
@@ -1192,6 +1208,11 @@ if ($submit || $preview || $refresh)
 	{
 		// We have a poll but the editing user is not permitted to create/edit it.
 		// So we just keep the original poll-data.
+		// Decode the poll title and options text fisrt.
+		$original_poll_data['poll_title'] = $bbcode_utils->unparse($original_poll_data['poll_title']);
+		$original_poll_data['poll_option_text'] = $bbcode_utils->unparse($original_poll_data['poll_option_text']);
+		$original_poll_data['poll_options'] = explode("\n", $original_poll_data['poll_option_text']);
+
 		$poll = array_merge($original_poll_data, array(
 			'enable_bbcode'		=> $post_data['enable_bbcode'],
 			'enable_urls'		=> $post_data['enable_urls'],

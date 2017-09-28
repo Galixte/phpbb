@@ -712,7 +712,7 @@ function posting_gen_inline_attachments(&$attachment_data)
 */
 function posting_gen_attachment_entry($attachment_data, &$filename_data, $show_attach_box = true)
 {
-	global $template, $config, $phpbb_root_path, $phpEx, $user;
+	global $template, $config, $phpbb_root_path, $phpEx, $user, $phpbb_dispatcher;
 
 	// Some default template variables
 	$template->assign_vars(array(
@@ -730,6 +730,7 @@ function posting_gen_attachment_entry($attachment_data, &$filename_data, $show_a
 		foreach ($attachment_data as $count => $attach_row)
 		{
 			$hidden = '';
+			$attachrow_template_vars = array();
 			$attach_row['real_filename'] = utf8_basename($attach_row['real_filename']);
 
 			foreach ($attach_row as $key => $value)
@@ -739,7 +740,7 @@ function posting_gen_attachment_entry($attachment_data, &$filename_data, $show_a
 
 			$download_link = append_sid("{$phpbb_root_path}download/file.$phpEx", 'mode=view&amp;id=' . (int) $attach_row['attach_id'], true, ($attach_row['is_orphan']) ? $user->session_id : false);
 
-			$template->assign_block_vars('attach_row', array(
+			$attachrow_template_vars[(int) $attach_row['attach_id']] = array(
 				'FILENAME'			=> utf8_basename($attach_row['real_filename']),
 				'A_FILENAME'		=> addslashes(utf8_basename($attach_row['real_filename'])),
 				'FILE_COMMENT'		=> $attach_row['attach_comment'],
@@ -749,9 +750,22 @@ function posting_gen_attachment_entry($attachment_data, &$filename_data, $show_a
 				'FILESIZE'			=> get_formatted_filesize($attach_row['filesize']),
 
 				'U_VIEW_ATTACHMENT'	=> $download_link,
-				'S_HIDDEN'			=> $hidden)
+				'S_HIDDEN'			=> $hidden,
 			);
 		}
+
+		/**
+		* Modify inline attachments template vars
+		*
+		* @event core.modify_inline_attachments_template_vars
+		* @var	array	attachment_data				Array containing attachments data
+		* @var	array	attachrow_template_vars		Array containing attachments template vars
+		* @since 3.2.2-RC1
+		*/
+		$vars = array('attachment_data', 'attachrow_template_vars');
+		extract($phpbb_dispatcher->trigger_event('core.modify_inline_attachments_template_vars', compact($vars)));
+
+		$template->assign_block_vars_array('attach_row', $attachrow_template_vars);
 	}
 
 	return sizeof($attachment_data);
@@ -2571,16 +2585,54 @@ function phpbb_upload_popup($forum_style = 0)
 
 /**
 * Do the various checks required for removing posts as well as removing it
+*
+* @param int		$forum_id		The id of the forum
+* @param int		$topic_id		The id of the topic
+* @param int		$post_id		The id of the post
+* @param array		$post_data		Array with the post data
+* @param bool		$is_soft		The flag indicating whether it is the soft delete mode
+* @param string		$delete_reason	Description for the post deletion reason
+*
+* @return null
 */
 function phpbb_handle_post_delete($forum_id, $topic_id, $post_id, &$post_data, $is_soft = false, $delete_reason = '')
 {
 	global $user, $auth, $config, $request;
-	global $phpbb_root_path, $phpEx, $phpbb_log;
+	global $phpbb_root_path, $phpEx, $phpbb_log, $phpbb_dispatcher;
 
+	$force_delete_allowed = $force_softdelete_allowed = false;
 	$perm_check = ($is_soft) ? 'softdelete' : 'delete';
 
+	/**
+	* This event allows to modify the conditions for the post deletion
+	*
+	* @event core.handle_post_delete_conditions
+	* @var	int		forum_id		The id of the forum
+	* @var	int		topic_id		The id of the topic
+	* @var	int		post_id			The id of the post
+	* @var	array	post_data		Array with the post data
+	* @var	bool	is_soft			The flag indicating whether it is the soft delete mode
+	* @var	string	delete_reason	Description for the post deletion reason
+	* @var	bool	force_delete_allowed		Allow the user to delete the post (all permissions and conditions are ignored)
+	* @var	bool	force_softdelete_allowed	Allow the user to softdelete the post (all permissions and conditions are ignored)
+	* @var	string	perm_check		The deletion mode softdelete|delete
+	* @since 3.1.11-RC1
+	*/
+	$vars = array(
+		'forum_id',
+		'topic_id',
+		'post_id',
+		'post_data',
+		'is_soft',
+		'delete_reason',
+		'force_delete_allowed',
+		'force_softdelete_allowed',
+		'perm_check',
+	);
+	extract($phpbb_dispatcher->trigger_event('core.handle_post_delete_conditions', compact($vars)));
+
 	// If moderator removing post or user itself removing post, present a confirmation screen
-	if ($auth->acl_get("m_$perm_check", $forum_id) || ($post_data['poster_id'] == $user->data['user_id'] && $user->data['is_registered'] && $auth->acl_get("f_$perm_check", $forum_id) && $post_id == $post_data['topic_last_post_id'] && !$post_data['post_edit_locked'] && ($post_data['post_time'] > time() - ($config['delete_time'] * 60) || !$config['delete_time'])))
+	if ($force_delete_allowed || ($is_soft && $force_softdelete_allowed) || $auth->acl_get("m_$perm_check", $forum_id) || ($post_data['poster_id'] == $user->data['user_id'] && $user->data['is_registered'] && $auth->acl_get("f_$perm_check", $forum_id) && $post_id == $post_data['topic_last_post_id'] && !$post_data['post_edit_locked'] && ($post_data['post_time'] > time() - ($config['delete_time'] * 60) || !$config['delete_time'])))
 	{
 		$s_hidden_fields = array(
 			'p'		=> $post_id,
@@ -2650,10 +2702,10 @@ function phpbb_handle_post_delete($forum_id, $topic_id, $post_id, &$post_data, $
 		}
 		else
 		{
-			global $user, $template, $request;
+			global $template;
 
-			$can_delete = $auth->acl_get('m_delete', $forum_id) || ($post_data['poster_id'] == $user->data['user_id'] && $user->data['is_registered'] && $auth->acl_get('f_delete', $forum_id));
-			$can_softdelete = $auth->acl_get('m_softdelete', $forum_id) || ($post_data['poster_id'] == $user->data['user_id'] && $user->data['is_registered'] && $auth->acl_get('f_softdelete', $forum_id));
+			$can_delete = $force_delete_allowed || ($auth->acl_get('m_delete', $forum_id) || ($post_data['poster_id'] == $user->data['user_id'] && $user->data['is_registered'] && $auth->acl_get('f_delete', $forum_id)));
+			$can_softdelete = $force_softdelete_allowed || ($auth->acl_get('m_softdelete', $forum_id) || ($post_data['poster_id'] == $user->data['user_id'] && $user->data['is_registered'] && $auth->acl_get('f_softdelete', $forum_id)));
 
 			$template->assign_vars(array(
 				'S_SOFTDELETED'			=> $post_data['post_visibility'] == ITEM_DELETED,
