@@ -18,6 +18,12 @@ class phpbb_mock_container_builder implements ContainerInterface
 	protected $services = array();
 	protected $parameters = array();
 
+	public function __construct()
+	{
+		$this->setParameter('debug.load_time', false);
+		$this->setParameter('session.log_errors', false);
+	}
+
 	/**
 	* Sets a service.
 	*

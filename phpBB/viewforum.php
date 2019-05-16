@@ -87,7 +87,7 @@ if (isset($_GET['e']) && !$user->data['is_registered'])
 }
 
 // Permissions check
-if (!$auth->acl_gets('f_list', 'f_read', $forum_id) || ($forum_data['forum_type'] == FORUM_LINK && $forum_data['forum_link'] && !$auth->acl_get('f_read', $forum_id)))
+if (!$auth->acl_gets('f_list', 'f_list_topics', 'f_read', $forum_id) || ($forum_data['forum_type'] == FORUM_LINK && $forum_data['forum_link'] && !$auth->acl_get('f_read', $forum_id)))
 {
 	if ($user->data['user_id'] != ANONYMOUS)
 	{
@@ -161,7 +161,22 @@ $phpbb_content_visibility = $phpbb_container->get('content.visibility');
 $topics_count = $phpbb_content_visibility->get_count('forum_topics', $forum_data, $forum_id);
 $start = $pagination->validate_start($start, $config['topics_per_page'], $topics_count);
 
-page_header($forum_data['forum_name'] . ($start ? ' - ' . $user->lang('PAGE_TITLE_NUMBER', $pagination->get_on_page($config['topics_per_page'], $start)) : ''), true, $forum_id);
+$page_title = $forum_data['forum_name'] . ($start ? ' - ' . $user->lang('PAGE_TITLE_NUMBER', $pagination->get_on_page($config['topics_per_page'], $start)) : '');
+
+/**
+* You can use this event to modify the page title of the viewforum page
+*
+* @event core.viewforum_modify_page_title
+* @var	string	page_title		Title of the viewforum page
+* @var	array	forum_data		Array with forum data
+* @var	int		forum_id		The forum ID
+* @var	int		start			Start offset used to calculate the page
+* @since 3.2.2-RC1
+*/
+$vars = array('page_title', 'forum_data', 'forum_id', 'start');
+extract($phpbb_dispatcher->trigger_event('core.viewforum_modify_page_title', compact($vars)));
+
+page_header($page_title, true, $forum_id);
 
 $template->set_filenames(array(
 	'body' => 'viewforum_body.html')
@@ -181,8 +196,11 @@ if (!($forum_data['forum_type'] == FORUM_POST || (($forum_data['forum_flags'] & 
 
 // Ok, if someone has only list-access, we only display the forum list.
 // We also make this circumstance available to the template in case we want to display a notice. ;)
-if (!$auth->acl_get('f_read', $forum_id))
+if (!$auth->acl_gets('f_read', 'f_list_topics', $forum_id))
 {
+	// Add form token for login box
+	add_form_key('login', '_LOGIN');
+
 	$template->assign_vars(array(
 		'S_NO_READ_ACCESS'		=> true,
 	));
@@ -269,6 +287,20 @@ $limit_days = array(0 => $user->lang['ALL_TOPICS'], 1 => $user->lang['1_DAY'], 7
 
 $sort_by_text = array('a' => $user->lang['AUTHOR'], 't' => $user->lang['POST_TIME'], 'r' => $user->lang['REPLIES'], 's' => $user->lang['SUBJECT'], 'v' => $user->lang['VIEWS']);
 $sort_by_sql = array('a' => 't.topic_first_poster_name', 't' => array('t.topic_last_post_time', 't.topic_last_post_id'), 'r' => (($auth->acl_get('m_approve', $forum_id)) ? 't.topic_posts_approved + t.topic_posts_unapproved + t.topic_posts_softdeleted' : 't.topic_posts_approved'), 's' => 'LOWER(t.topic_title)', 'v' => 't.topic_views');
+
+/**
+ * Modify the topic ordering if needed
+ *
+ * @event core.viewforum_modify_topic_ordering
+ * @var array	sort_by_text	Topic ordering options
+ * @var array	sort_by_sql		Topic orderings options SQL equivalent
+ * @since 3.2.5-RC1
+ */
+$vars = array(
+	'sort_by_text',
+	'sort_by_sql',
+);
+extract($phpbb_dispatcher->trigger_event('core.viewforum_modify_topic_ordering', compact($vars)));
 
 $s_limit_days = $s_sort_key = $s_sort_dir = $u_sort_param = '';
 gen_sort_selects($limit_days, $sort_by_text, $sort_days, $sort_key, $sort_dir, $s_limit_days, $s_sort_key, $s_sort_dir, $u_sort_param, $default_sort_days, $default_sort_key, $default_sort_dir);
@@ -491,7 +523,7 @@ if ($forum_data['forum_type'] == FORUM_POST)
 
 		'WHERE'		=> '(t.forum_id = ' . $forum_id . '
 				AND t.topic_type = ' . POST_ANNOUNCE . ') OR
-			(' . $db->sql_in_set('t.forum_id', $g_forum_ary) . '
+			(' . $db->sql_in_set('t.forum_id', $g_forum_ary, false, true) . '
 				AND t.topic_type = ' . POST_GLOBAL . ')',
 
 		'ORDER_BY'	=> 't.topic_time DESC',
@@ -523,7 +555,7 @@ if ($forum_data['forum_type'] == FORUM_POST)
 
 	while ($row = $db->sql_fetchrow($result))
 	{
-		if ($row['topic_visibility'] != ITEM_APPROVED && !$auth->acl_get('m_approve', $row['forum_id']))
+		if (!$phpbb_content_visibility->is_visible('topic', $row['forum_id'], $row))
 		{
 			// Do not display announcements that are waiting for approval or soft deleted.
 			continue;
@@ -582,6 +614,18 @@ else
 	$direction = (($sort_dir == 'd') ? 'DESC' : 'ASC');
 	$sql_start = $start;
 }
+
+/**
+ * Modify the topics sort ordering if needed
+ *
+ * @event core.viewforum_modify_sort_direction
+ * @var string	direction	Topics sort order
+ * @since 3.2.5-RC1
+ */
+$vars = array(
+	'direction',
+);
+extract($phpbb_dispatcher->trigger_event('core.viewforum_modify_sort_direction', compact($vars)));
 
 if (is_array($sort_by_sql[$sort_key]))
 {
@@ -732,7 +776,7 @@ if (count($shadow_topic_list))
 		}
 
 		// Do not include those topics the user has no permission to access
-		if (!$auth->acl_get('f_read', $row['forum_id']))
+		if (!$auth->acl_gets('f_read', 'f_list_topics', $row['forum_id']))
 		{
 			// We need to remove any trace regarding this topic. :)
 			unset($rowset[$orig_topic_id]);
@@ -875,7 +919,7 @@ if (count($topic_list))
 
 		// Generate all the URIs ...
 		$view_topic_url_params = 'f=' . $row['forum_id'] . '&amp;t=' . $topic_id;
-		$view_topic_url = append_sid("{$phpbb_root_path}viewtopic.$phpEx", $view_topic_url_params);
+		$view_topic_url = $auth->acl_get('f_read', $forum_id) ? append_sid("{$phpbb_root_path}viewtopic.$phpEx", $view_topic_url_params) : false;
 
 		$topic_unapproved = (($row['topic_visibility'] == ITEM_UNAPPROVED || $row['topic_visibility'] == ITEM_REAPPROVE) && $auth->acl_get('m_approve', $row['forum_id']));
 		$posts_unapproved = ($row['topic_visibility'] == ITEM_APPROVED && $row['topic_posts_unapproved'] && $auth->acl_get('m_approve', $row['forum_id']));
@@ -929,8 +973,8 @@ if (count($topic_list))
 			'S_TOPIC_LOCKED'		=> ($row['topic_status'] == ITEM_LOCKED) ? true : false,
 			'S_TOPIC_MOVED'			=> ($row['topic_status'] == ITEM_MOVED) ? true : false,
 
-			'U_NEWEST_POST'			=> append_sid("{$phpbb_root_path}viewtopic.$phpEx", $view_topic_url_params . '&amp;view=unread') . '#unread',
-			'U_LAST_POST'			=> append_sid("{$phpbb_root_path}viewtopic.$phpEx", $view_topic_url_params . '&amp;p=' . $row['topic_last_post_id']) . '#p' . $row['topic_last_post_id'],
+			'U_NEWEST_POST'			=> $auth->acl_get('f_read', $forum_id) ? append_sid("{$phpbb_root_path}viewtopic.$phpEx", $view_topic_url_params . '&amp;view=unread') . '#unread' : false,
+			'U_LAST_POST'			=> $auth->acl_get('f_read', $forum_id)  ? append_sid("{$phpbb_root_path}viewtopic.$phpEx", $view_topic_url_params . '&amp;p=' . $row['topic_last_post_id']) . '#p' . $row['topic_last_post_id'] : false,
 			'U_LAST_POST_AUTHOR'	=> get_username_string('profile', $row['topic_last_poster_id'], $row['topic_last_poster_name'], $row['topic_last_poster_colour']),
 			'U_TOPIC_AUTHOR'		=> get_username_string('profile', $row['topic_poster'], $row['topic_first_poster_name'], $row['topic_first_poster_colour']),
 			'U_VIEW_TOPIC'			=> $view_topic_url,

@@ -1399,10 +1399,6 @@ function phpbb_attachment_category($cat_id)
 		case 2:
 			return ATTACHMENT_CATEGORY_WM;
 		break;
-
-		case 3:
-			return ATTACHMENT_CATEGORY_FLASH;
-		break;
 	}
 
 	return ATTACHMENT_CATEGORY_NONE;
@@ -1694,7 +1690,6 @@ function phpbb_import_attach_config()
 	$config->set('img_create_thumbnail', $attach_config['img_create_thumbnail']);
 	$config->set('img_max_thumb_width', 400);
 	$config->set('img_min_thumb_filesize', $attach_config['img_min_thumb_filesize']);
-	$config->set('img_imagick', $attach_config['img_imagick']);
 }
 
 /**

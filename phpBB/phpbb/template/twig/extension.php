@@ -18,6 +18,9 @@ class extension extends \Twig_Extension
 	/** @var \phpbb\template\context */
 	protected $context;
 
+	/** @var \phpbb\template\twig\environment */
+	protected $environment;
+
 	/** @var \phpbb\language\language */
 	protected $language;
 
@@ -25,12 +28,14 @@ class extension extends \Twig_Extension
 	* Constructor
 	*
 	* @param \phpbb\template\context $context
+	* @param \phpbb\template\twig\environment $environment
 	* @param \phpbb\language\language $language
 	* @return \phpbb\template\twig\extension
 	*/
-	public function __construct(\phpbb\template\context $context, $language)
+	public function __construct(\phpbb\template\context $context, \phpbb\template\twig\environment $environment, $language)
 	{
 		$this->context = $context;
+		$this->environment = $environment;
 		$this->language = $language;
 	}
 
@@ -56,9 +61,9 @@ class extension extends \Twig_Extension
 			new \phpbb\template\twig\tokenparser\includeparser,
 			new \phpbb\template\twig\tokenparser\includejs,
 			new \phpbb\template\twig\tokenparser\includecss,
-			new \phpbb\template\twig\tokenparser\event,
-			new \phpbb\template\twig\tokenparser\includephp,
-			new \phpbb\template\twig\tokenparser\php,
+			new \phpbb\template\twig\tokenparser\event($this->environment),
+			new \phpbb\template\twig\tokenparser\includephp($this->environment),
+			new \phpbb\template\twig\tokenparser\php($this->environment),
 		);
 	}
 
@@ -86,7 +91,7 @@ class extension extends \Twig_Extension
 		return array(
 			new \Twig_SimpleFunction('lang', array($this, 'lang')),
 			new \Twig_SimpleFunction('lang_defined', array($this, 'lang_defined')),
-			new \Twig_SimpleFunction('get_class', array($this, 'get_class')),
+			new \Twig_SimpleFunction('get_class', 'get_class'),
 		);
 	}
 
@@ -174,7 +179,7 @@ class extension extends \Twig_Extension
 
 		$context_vars = $this->context->get_root_ref();
 
-		if (isset($context_vars['L_' . $key]))
+		if (is_string($key) && isset($context_vars['L_' . $key]))
 		{
 			return $context_vars['L_' . $key];
 		}
@@ -193,17 +198,5 @@ class extension extends \Twig_Extension
 	public function lang_defined($key)
 	{
 		return call_user_func_array([$this->language, 'is_set'], [$key]);
-	}
-
-	/*
-	 * Returns the name of the class of an object
-	 *
-	 * @param object            $object         The object
-	 *
-	 * @return string
-	 */
-	public function get_class($object)
-	{
-		return get_class($object);
 	}
 }

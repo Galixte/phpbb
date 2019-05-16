@@ -25,7 +25,7 @@ class phpbb_avatar_manager_test extends \phpbb_database_test_case
 		return $this->createXMLDataSet(dirname(__FILE__) . '/fixtures/users.xml');
 	}
 
-	public function setUp()
+	public function setUp(): void
 	{
 		global $phpbb_root_path, $phpEx;
 
@@ -35,14 +35,7 @@ class phpbb_avatar_manager_test extends \phpbb_database_test_case
 			->method('get')
 			->will($this->returnArgument(0));
 
-		$filesystem = new \phpbb\filesystem\filesystem();
-		$adapter = new \phpbb\storage\adapter\local($filesystem, new \FastImageSize\FastImageSize(), new \phpbb\mimetype\guesser(array(new \phpbb\mimetype\extension_guesser)), $phpbb_root_path);
-		$adapter->configure(['path' => 'images/avatars/upload']);
-		$adapter_factory_mock = $this->createMock('\phpbb\storage\adapter_factory');
-		$adapter_factory_mock->expects($this->any())
-			->method('get')
-			->willReturn($adapter);
-		$storage = new \phpbb\storage\storage($adapter_factory_mock, '');
+		$storage = $this->createMock('\phpbb\storage\storage');
 
 		// Prepare dependencies for avatar manager and driver
 		$this->config = new \phpbb\config\config(array());
@@ -118,7 +111,7 @@ class phpbb_avatar_manager_test extends \phpbb_database_test_case
 		$this->config['allow_avatar_' . get_class($this->avatar_barfoo)] = false;
 
 		// Set up avatar manager
-		$this->manager = new \phpbb\avatar\manager($this->config, $avatar_drivers, $phpbb_container);
+		$this->manager = new \phpbb\avatar\manager($this->config, $dispatcher, $avatar_drivers);
 		$this->db = $this->new_dbal();
 		$lang_loader = new \phpbb\language\language_file_loader($phpbb_root_path, $phpEx);
 		$lang = new \phpbb\language\language($lang_loader);
@@ -204,7 +197,7 @@ class phpbb_avatar_manager_test extends \phpbb_database_test_case
 		$avatar_settings = $this->manager->get_avatar_settings($this->avatar_foobar);
 
 		$expected_settings = array(
-			'allow_avatar_' . get_class($this->avatar_foobar)	=> array('lang' => 'ALLOW_' . strtoupper(get_class($this->avatar_foobar)), 'validate' => 'bool', 'type' => 'radio:yes_no', 'explain' => false),
+			'allow_avatar_' . get_class($this->avatar_foobar)	=> array('lang' => 'ALLOW_' . strtoupper(get_class($this->avatar_foobar)), 'validate' => 'bool', 'type' => 'radio:yes_no', 'explain' => true),
 		);
 
 		$this->assertEquals($expected_settings, $avatar_settings);

@@ -2330,6 +2330,16 @@ function prune($forum_id, $prune_mode, $prune_date, $prune_flags = 0, $auto_sync
 		$topic_list = array_unique($topic_list);
 	}
 
+	/**
+	 * Perform additional actions before topic deletion via pruning
+	 *
+	 * @event core.prune_delete_before
+	 * @var int[]	topic_list		The IDs of the topics to be deleted
+	 * @since 3.2.2-RC1
+	 */
+	$vars = array('topic_list');
+	extract($phpbb_dispatcher->trigger_event('core.prune_delete_before', compact($vars)));
+
 	return delete_topics('topic_id', $topic_list, $auto_sync, false);
 }
 
@@ -2993,6 +3003,8 @@ function tidy_database()
 	}
 	$db->sql_freeresult($result);
 
+	$db->sql_transaction('begin');
+
 	// Delete those rows from the acl tables not having listed the forums above
 	$sql = 'DELETE FROM ' . ACL_GROUPS_TABLE . '
 		WHERE ' . $db->sql_in_set('forum_id', $forum_ids, true);
@@ -3001,6 +3013,8 @@ function tidy_database()
 	$sql = 'DELETE FROM ' . ACL_USERS_TABLE . '
 		WHERE ' . $db->sql_in_set('forum_id', $forum_ids, true);
 	$db->sql_query($sql);
+
+	$db->sql_transaction('commit');
 
 	$config->set('database_last_gc', time(), false);
 }

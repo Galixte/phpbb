@@ -143,6 +143,13 @@ class container_builder
 			{
 				if ($this->use_extensions)
 				{
+					$autoload_cache = new ConfigCache($this->get_autoload_filename(), defined('DEBUG'));
+					if (!$autoload_cache->isFresh())
+					{
+						// autoload cache should be refreshed
+						$this->load_extensions();
+					}
+
 					require($this->get_autoload_filename());
 				}
 
@@ -479,7 +486,7 @@ class container_builder
 
 			$cached_container_dump = $dumper->dump(array(
 				'class'      => 'phpbb_cache_container',
-				'base_class' => 'Symfony\\Component\\DependencyInjection\\ContainerBuilder',
+				'base_class' => 'Symfony\\Component\\DependencyInjection\\Container',
 			));
 
 			$cache->write($cached_container_dump, $this->container->getResources());

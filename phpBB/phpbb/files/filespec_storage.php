@@ -51,9 +51,6 @@ class filespec_storage
 	/** @var string Destination file name */
 	protected $destination_file = '';
 
-	/** @var string Destination file path */
-	protected $destination_path = '';
-
 	/** @var bool Whether file was moved */
 	protected $file_moved = false;
 
@@ -111,7 +108,7 @@ class filespec_storage
 	 */
 	public function set_upload_ary($upload_ary)
 	{
-		if (!isset($upload_ary) || !sizeof($upload_ary))
+		if (!isset($upload_ary) || !count($upload_ary))
 		{
 			return $this;
 		}
@@ -291,6 +288,10 @@ class filespec_storage
 		{
 			$storage->delete($this->destination_file);
 		}
+		else
+		{
+			@unlink($this->filename);
+		}
 	}
 
 	/**
@@ -389,7 +390,7 @@ class filespec_storage
 	 */
 	public function move_file($storage, $overwrite = false, $skip_image_check = false)
 	{
-		if (sizeof($this->error))
+		if (count($this->error))
 		{
 			return false;
 		}
@@ -448,8 +449,13 @@ class filespec_storage
 		try
 		{
 			$fp = fopen($this->filename, 'rb');
+
 			$storage->write_stream($this->destination_file, $fp);
-			fclose($fp);
+
+			if (is_resource($fp))
+			{
+				fclose($fp);
+			}
 		}
 		catch (\phpbb\storage\exception\exception $e)
 		{
@@ -460,7 +466,7 @@ class filespec_storage
 		// Remove temporary filename
 		@unlink($this->filename);
 
-		if (sizeof($this->error))
+		if (count($this->error))
 		{
 			return false;
 		}

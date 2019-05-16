@@ -75,7 +75,7 @@ class phpbb_functional_test_case extends phpbb_test_case
 		return array();
 	}
 
-	public function setUp()
+	public function setUp(): void
 	{
 		parent::setUp();
 
@@ -114,7 +114,7 @@ class phpbb_functional_test_case extends phpbb_test_case
 		}
 	}
 
-	protected function tearDown()
+	protected function tearDown(): void
 	{
 		parent::tearDown();
 
@@ -396,6 +396,14 @@ class phpbb_functional_test_case extends phpbb_test_case
 		global $phpbb_container;
 		$phpbb_container->reset();
 
+		// Purge cache to remove cached files
+		$phpbb_container = new phpbb_mock_container_builder();
+		$phpbb_container->setParameter('core.environment', PHPBB_ENVIRONMENT);
+		$phpbb_container->setParameter('core.cache_dir', $phpbb_root_path . 'cache/' . PHPBB_ENVIRONMENT . '/');
+
+		$cache = new \phpbb\cache\driver\file;
+		$cache->purge();
+
 		$blacklist = ['phpbb_class_loader_mock', 'phpbb_class_loader_ext', 'phpbb_class_loader'];
 
 		foreach (array_keys($GLOBALS) as $key)
@@ -415,9 +423,9 @@ class phpbb_functional_test_case extends phpbb_test_case
 		$ext_path = str_replace('/', '%2F', $extension);
 
 		$crawler = self::request('GET', 'adm/index.php?i=acp_extensions&mode=main&action=enable_pre&ext_name=' . $ext_path . '&sid=' . $this->sid);
-		$this->assertGreaterThan(0, $crawler->filter('.submit-buttons')->count());
+		$this->assertGreaterThan(1, $crawler->filter('div.main fieldset div input.button2')->count());
 
-		$form = $crawler->selectButton('Enable')->form();
+		$form = $crawler->selectButton('confirm')->form();
 		$crawler = self::submit($form);
 		$this->add_lang('acp/extensions');
 
@@ -435,6 +443,72 @@ class phpbb_functional_test_case extends phpbb_test_case
 		$this->assertContainsLang('EXTENSION_ENABLE_SUCCESS', $crawler->filter('div.successbox')->text());
 
 		$this->logout();
+	}
+
+	public function disable_ext($extension)
+	{
+		$this->login();
+		$this->admin_login();
+
+		$ext_path = str_replace('/', '%2F', $extension);
+
+		$crawler = self::request('GET', 'adm/index.php?i=acp_extensions&mode=main&action=disable_pre&ext_name=' . $ext_path . '&sid=' . $this->sid);
+		$this->assertGreaterThan(1, $crawler->filter('div.main fieldset div input.button2')->count());
+
+		$form = $crawler->selectButton('confirm')->form();
+		$crawler = self::submit($form);
+		$this->add_lang('acp/extensions');
+
+		$meta_refresh = $crawler->filter('meta[http-equiv="refresh"]');
+
+		// Wait for extension to be fully enabled
+		while (count($meta_refresh))
+		{
+			preg_match('#url=.+/(adm+.+)#', $meta_refresh->attr('content'), $match);
+			$url = $match[1];
+			$crawler = self::request('POST', $url);
+			$meta_refresh = $crawler->filter('meta[http-equiv="refresh"]');
+		}
+
+		$this->assertContainsLang('EXTENSION_DISABLE_SUCCESS', $crawler->filter('div.successbox')->text());
+
+		$this->logout();
+	}
+
+	public function delete_ext_data($extension)
+	{
+		$this->login();
+		$this->admin_login();
+
+		$ext_path = str_replace('/', '%2F', $extension);
+
+		$crawler = self::request('GET', 'adm/index.php?i=acp_extensions&mode=main&action=delete_data_pre&ext_name=' . $ext_path . '&sid=' . $this->sid);
+		$this->assertGreaterThan(1, $crawler->filter('div.main fieldset div input.button2')->count());
+
+		$form = $crawler->selectButton('confirm')->form();
+		$crawler = self::submit($form);
+		$this->add_lang('acp/extensions');
+
+		$meta_refresh = $crawler->filter('meta[http-equiv="refresh"]');
+
+		// Wait for extension to be fully enabled
+		while (count($meta_refresh))
+		{
+			preg_match('#url=.+/(adm+.+)#', $meta_refresh->attr('content'), $match);
+			$url = $match[1];
+			$crawler = self::request('POST', $url);
+			$meta_refresh = $crawler->filter('meta[http-equiv="refresh"]');
+		}
+
+		$this->assertContainsLang('EXTENSION_DELETE_DATA_SUCCESS', $crawler->filter('div.successbox')->text());
+
+		$this->logout();
+	}
+
+	public function uninstall_ext($extension)
+	{
+		$this->disable_ext($extension);
+		$this->delete_ext_data($extension);
 	}
 
 	static private function recreate_database($config)
@@ -508,7 +582,6 @@ class phpbb_functional_test_case extends phpbb_test_case
 		else
 		{
 			$db->sql_multi_insert(STYLES_TABLE, array(array(
-				'style_id' => $style_id,
 				'style_name' => $style_path,
 				'style_copyright' => '',
 				'style_active' => 1,
@@ -550,9 +623,10 @@ class phpbb_functional_test_case extends phpbb_test_case
 	* Creates a new user with limited permissions
 	*
 	* @param string $username Also doubles up as the user's password
+	* @param string $email User email (defaults to nobody@example.com)
 	* @return int ID of created user
 	*/
-	protected function create_user($username)
+	protected function create_user($username, $email = 'nobody@example.com')
 	{
 		// Required by unique_id
 		global $config;
@@ -570,6 +644,9 @@ class phpbb_functional_test_case extends phpbb_test_case
 		$config['newest_user_colour'] = '';
 		$config['rand_seed'] = '';
 		$config['rand_seed_last_update'] = time() + 600;
+
+		// Prevent new user to have an invalid style
+		$config['default_style'] = 1;
 
 		// Required by user_add
 		global $db, $cache, $phpbb_dispatcher, $phpbb_container;
@@ -601,7 +678,7 @@ class phpbb_functional_test_case extends phpbb_test_case
 		$user_row = array(
 			'username' => $username,
 			'group_id' => 2,
-			'user_email' => 'nobody@example.com',
+			'user_email' => $email,
 			'user_type' => 0,
 			'user_lang' => 'en',
 			'user_timezone' => 'UTC',
@@ -842,7 +919,7 @@ class phpbb_functional_test_case extends phpbb_test_case
 	 * @param string $haystack	Search this
 	 * @param string $message	Optional failure message
 	 */
-	public function assertContainsLang($needle, $haystack, $message = null)
+	public function assertContainsLang($needle, $haystack, $message = '')
 	{
 		$this->assertContains(html_entity_decode($this->lang($needle), ENT_QUOTES), $haystack, $message);
 	}
@@ -854,7 +931,7 @@ class phpbb_functional_test_case extends phpbb_test_case
 	* @param string $haystack	Search this
 	* @param string $message	Optional failure message
 	*/
-	public function assertNotContainsLang($needle, $haystack, $message = null)
+	public function assertNotContainsLang($needle, $haystack, $message = '')
 	{
 		$this->assertNotContains(html_entity_decode($this->lang($needle), ENT_QUOTES), $haystack, $message);
 	}
@@ -908,10 +985,15 @@ class phpbb_functional_test_case extends phpbb_test_case
 	* status code. This assertion tries to catch that.
 	*
 	* @param int $status_code	Expected status code
-	* @return null
+	* @return void
 	*/
 	static public function assert_response_status_code($status_code = 200)
 	{
+		if ($status_code != self::$client->getResponse()->getStatus() &&
+			preg_match('/^5[0-9]{2}/', self::$client->getResponse()->getStatus()))
+		{
+			self::fail("Encountered unexpected server error:\n" . self::$client->getResponse()->getContent());
+		}
 		self::assertEquals($status_code, self::$client->getResponse()->getStatus(), 'HTTP status code does not match');
 	}
 
@@ -1167,10 +1249,6 @@ class phpbb_functional_test_case extends phpbb_test_case
 				$form_data[$field['name']] = $field['value'];
 			}
 		}
-
-		// Bypass time restriction that said that if the lastclick time (i.e. time when the form was opened)
-		// is not at least 2 seconds before submission, cancel the form
-		$form_data['lastclick'] = 0;
 
 		// I use a request because the form submission method does not allow you to send data that is not
 		// contained in one of the actual form fields that the browser sees (i.e. it ignores "hidden" inputs)

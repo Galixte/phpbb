@@ -252,7 +252,7 @@ class session
 			$ips = explode(' ', $this->forwarded_for);
 			foreach ($ips as $ip)
 			{
-				// check IPv4 first, the IPv6 is hopefully only going to be used very seldomly
+				// check IPv4 first, the IPv6 is hopefully only going to be used very seldom
 				if (!empty($ip) && !preg_match(get_preg_expression('ipv4'), $ip) && !preg_match(get_preg_expression('ipv6'), $ip))
 				{
 					// contains invalid data, don't use the forwarded for header
@@ -480,8 +480,8 @@ class session
 				}
 				else
 				{
-					// Added logging temporarly to help debug bugs...
-					if (defined('DEBUG') && $this->data['user_id'] != ANONYMOUS)
+					// Added logging temporarily to help debug bugs...
+					if ($phpbb_container->getParameter('session.log_errors') && $this->data['user_id'] != ANONYMOUS)
 					{
 						if ($referer_valid)
 						{
@@ -1301,7 +1301,12 @@ class session
 			trigger_error($message);
 		}
 
-		return ($banned && $ban_row['ban_give_reason']) ? $ban_row['ban_give_reason'] : $banned;
+		if (!empty($ban_row))
+		{
+			$ban_row['ban_triggered_by'] = $ban_triggered_by;
+		}
+
+		return ($banned && $ban_row) ? $ban_row : $banned;
 	}
 
 	/**
@@ -1333,7 +1338,7 @@ class session
 	* Only IPv4 (rbldns does not support AAAA records/IPv6 lookups)
 	*
 	* @author satmd (from the php manual)
-	* @param string 		$mode	register/post - spamcop for example is ommitted for posting
+	* @param string 		$mode	register/post - spamcop for example is omitted for posting
 	* @param string|false	$ip		the IPv4 address to check
 	*
 	* @return false if ip is not blacklisted, else an array([checked server], [lookup])
@@ -1392,7 +1397,7 @@ class session
 
 	/**
 	* Check if URI is blacklisted
-	* This should be called only where absolutly necessary, for example on the submitted website field
+	* This should be called only where absolutely necessary, for example on the submitted website field
 	* This function is not in use at the moment and is only included for testing purposes, it may not work at all!
 	* This means it is untested at the moment and therefore commented out
 	*
@@ -1616,13 +1621,15 @@ class session
 			return;
 		}
 
+		// Do not update the session page for ajax requests, so the view online still works as intended
+		$page_changed = $this->update_session_page && $this->data['session_page'] != $this->page['page'] && !$request->is_ajax();
+
 		// Only update session DB a minute or so after last update or if page changes
-		if ($this->time_now - ((isset($this->data['session_time'])) ? $this->data['session_time'] : 0) > 60 || ($this->update_session_page && $this->data['session_page'] != $this->page['page']))
+		if ($this->time_now - (isset($this->data['session_time']) ? $this->data['session_time'] : 0) > 60 || $page_changed)
 		{
 			$sql_ary = array('session_time' => $this->time_now);
 
-			// Do not update the session page for ajax requests, so the view online still works as intended
-			if ($this->update_session_page && !$request->is_ajax())
+			if ($page_changed)
 			{
 				$sql_ary['session_page'] = substr($this->page['page'], 0, 199);
 				$sql_ary['session_forum_id'] = $this->page['forum'];

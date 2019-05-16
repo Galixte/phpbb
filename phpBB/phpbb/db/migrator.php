@@ -503,11 +503,14 @@ class migrator
 			return;
 		}
 
-		foreach ($this->migration_state as $name => $state)
+		foreach ($this->migrations as $name)
 		{
-			if (!empty($state['migration_depends_on']) && in_array($migration, $state['migration_depends_on']))
+			$state = $this->migration_state($name);
+
+			if ($state && in_array($migration, $state['migration_depends_on']) && ($state['migration_schema_done'] || $state['migration_data_done']))
 			{
 				$this->revert_do($name);
+				return;
 			}
 		}
 
@@ -757,7 +760,7 @@ class migrator
 
 				$condition = $parameters[0];
 
-				if (!$condition)
+				if (!$condition || (is_array($condition) && !$this->run_step($condition, $last_result, $reverse)))
 				{
 					return false;
 				}

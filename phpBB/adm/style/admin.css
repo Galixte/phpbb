@@ -1,4 +1,4 @@
-/*  phpBB 3.2 Admin Style Sheet
+/*  phpBB 3.3 Admin Style Sheet
 	------------------------------------------------------------------------
 	Original author:	subBlue ( http://www.subblue.com/ )
 	Copyright (c) phpBB Limited <https://www.phpbb.com>
@@ -539,7 +539,6 @@ li {
 	font-size: 1em;
 	border-right: 1px solid #cccfd3;
 	position: relative;
-	z-index: 1;
 	float: left;
 	width: 200px;
 	padding: 0;
@@ -756,6 +755,17 @@ td {
 	border-collapse: separate;
 }
 
+@media only screen and (min-width: 1100px), only screen and (min-device-width: 1100px) {
+	.lside .table1 {
+		display: inline-table;
+		width: 49.7%;
+	}
+}
+
+.tabled {
+	width: 25%;
+}
+
 dt#color_palette_placeholder table {
 	width: 80px;
 	margin-right: 5px;
@@ -868,6 +878,7 @@ table.zebra-table tbody tr:nth-child(odd) {
 }
 
 .row2 {
+	word-break: break-all;
 	background-color: #dcebfe;
 }
 
@@ -2142,7 +2153,6 @@ li .pagnation li span,
 	text-align: center;
 	border: 1px solid #aaaaaa;
 	color: #000000;
-	opacity: 0.95;
 	width: 200px;
 }
 
@@ -2712,6 +2722,10 @@ fieldset.permissions .permissions-switch {
 	margin: 0;
 }
 
+.rtl .dropdown li {
+	text-align: right;
+}
+
 .wrap .dropdown li,
 .dropdown.wrap li {
 	white-space: normal;
@@ -2726,6 +2740,10 @@ fieldset.permissions .permissions-switch {
 	top: 3.2em;
 	left: auto;
 	width: 250px;
+}
+
+.rtl .roles-options > .dropdown {
+	right: auto;
 }
 
 .roles-options {
@@ -2746,6 +2764,10 @@ fieldset.permissions .permissions-switch {
 	padding: 4px;
 }
 
+.rtl .roles-options > span {
+	background: url("../images/arrow_down.gif") no-repeat 7px 0.7em;
+}
+
 .roles-options li {
 	list-style: none;
 }
@@ -2757,6 +2779,14 @@ fieldset.permissions .permissions-switch {
 
 /* Classes for additional tasks
 ---------------------------------------- */
+.current-ext {
+	color: #228822;
+}
+
+.outdated-ext {
+	color: #bc2a4d;
+}
+
 .phpinfo {
 	overflow: auto;
 	width: 99%;

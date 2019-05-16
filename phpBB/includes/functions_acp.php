@@ -91,7 +91,6 @@ function adm_page_header($page_title)
 		'T_AVATAR_GALLERY_PATH'	=> "{$phpbb_root_path}{$config['avatar_gallery_path']}/",
 		'T_ICONS_PATH'			=> "{$phpbb_root_path}{$config['icons_path']}/",
 		'T_RANKS_PATH'			=> "{$phpbb_root_path}{$config['ranks_path']}/",
-		'T_UPLOAD_PATH'			=> "{$phpbb_root_path}{$config['upload_path']}/",
 		'T_FONT_AWESOME_LINK'	=> !empty($config['allow_cdn']) && !empty($config['load_font_awesome_url']) ? $config['load_font_awesome_url'] : "{$phpbb_root_path}assets/css/font-awesome.min.css?assets_version=" . $config['assets_version'],
 
 		'T_ASSETS_VERSION'		=> $config['assets_version'],
@@ -423,7 +422,7 @@ function build_cfg_template($tpl_type, $key, &$new_ary, $config_key, $vars)
 */
 function validate_config_vars($config_vars, &$cfg_array, &$error)
 {
-	global $phpbb_root_path, $user, $phpbb_dispatcher, $phpbb_filesystem;
+	global $phpbb_root_path, $user, $phpbb_dispatcher, $phpbb_filesystem, $language;
 
 	$type	= 0;
 	$min	= 1;
@@ -446,6 +445,16 @@ function validate_config_vars($config_vars, &$cfg_array, &$error)
 		// Validate a bit. ;) (0 = type, 1 = min, 2= max)
 		switch ($validator[$type])
 		{
+			case 'url':
+				$cfg_array[$config_name] = trim($cfg_array[$config_name]);
+
+				if (!empty($cfg_array[$config_name]) && !preg_match('#^' . get_preg_expression('url') . '$#iu', $cfg_array[$config_name]))
+				{
+					$error[] = $language->lang('URL_INVALID', $language->lang($config_definition['lang']));
+				}
+
+			// no break here
+
 			case 'string':
 				$length = utf8_strlen($cfg_array[$config_name]);
 
@@ -568,9 +577,6 @@ function validate_config_vars($config_vars, &$cfg_array, &$error)
 
 				$cfg_array[$config_name] = trim($destination);
 
-			// Absolute file path
-			case 'absolute_path':
-			case 'absolute_path_writable':
 			// Path being relative (still prefixed by phpbb_root_path), but with the ability to escape the root dir...
 			case 'path':
 			case 'wpath':
@@ -589,7 +595,7 @@ function validate_config_vars($config_vars, &$cfg_array, &$error)
 					break;
 				}
 
-				$path = in_array($config_definition['validate'], array('wpath', 'path', 'rpath', 'rwpath')) ? $phpbb_root_path . $cfg_array[$config_name] : $cfg_array[$config_name];
+				$path = $phpbb_root_path . $cfg_array[$config_name];
 
 				if (!file_exists($path))
 				{
@@ -602,7 +608,7 @@ function validate_config_vars($config_vars, &$cfg_array, &$error)
 				}
 
 				// Check if the path is writable
-				if ($config_definition['validate'] == 'wpath' || $config_definition['validate'] == 'rwpath' || $config_definition['validate'] === 'absolute_path_writable')
+				if ($config_definition['validate'] == 'wpath' || $config_definition['validate'] == 'rwpath')
 				{
 					if (file_exists($path) && !$phpbb_filesystem->is_writable($path))
 					{
