@@ -1,4 +1,4 @@
-/*  phpBB 3.2 Admin Style Sheet
+/*  phpBB 3.3 Admin Style Sheet
 	------------------------------------------------------------------------
 	Original author:	subBlue ( http://www.subblue.com/ )
 	Copyright (c) phpBB Limited <https://www.phpbb.com>
@@ -723,9 +723,20 @@ td {
 }
 
 .table1 {
-	border-collapse: separate;
-	border-spacing: 1px;
 	clear: both;
+	border-spacing: 1px;
+	border-collapse: separate;
+}
+
+@media only screen and (min-width: 1100px), only screen and (min-device-width: 1100px) {
+	.lside .table1 {
+		display: inline-table;
+		width: 49.7%;
+	}
+}
+
+.tabled {
+	width: 25%;
 }
 
 dt#color_palette_placeholder table {
